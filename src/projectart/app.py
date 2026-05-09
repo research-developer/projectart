@@ -47,7 +47,18 @@ class App:
 
             source = MouseSource(canvas_size=self.canvas_size, server=self._server)
             await source.run()
+        elif self.args.input == "gloves":
+            from .inputs.gloves import build_gloves_source
+
+            source = build_gloves_source(
+                canvas_size=self.canvas_size,
+                server=self._server,
+                webcam_a=self.args.webcam_a,
+                yolo_weights=self.args.yolo_weights,
+            )
+            await source.run()
         else:
-            log.warning("input=%s not yet implemented; idling. (M0 only ships --input mouse)",
-                       self.args.input)
+            log.warning(
+                "input=%s not yet implemented; idling.", self.args.input
+            )
             await self._server.wait_closed()
