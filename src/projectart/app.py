@@ -54,6 +54,7 @@ class App:
                 canvas_size=self.canvas_size,
                 server=self._server,
                 webcam_a=self.args.webcam_a,
+                webcam_b=self.args.webcam_b,
                 yolo_weights=self.args.yolo_weights,
             )
             await source.run()

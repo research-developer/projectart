@@ -1,0 +1,22 @@
+# YOLOv8 dataset config — local cats+people subset.
+#
+# Replace the train/val paths with absolute paths to your image folders
+# once you've collected and labeled images. Labels go in a sibling
+# `labels/` directory with the same basenames (image foo.jpg → label foo.txt).
+#
+# Class IDs match COCO so we can warm-start from yolov8n.pt without a
+# class-id remapping step. Ultralytics will use the names below for
+# display/logging — the indices are what matters numerically.
+
+path: .                       # dataset root (relative to this file)
+train: images/train
+val: images/val
+test:                         # optional
+
+# Class IDs as they appear in the .txt labels:
+#   0 → person   (matches COCO 0)
+#  15 → cat      (matches COCO 15)
+# All other class indices in the labels are ignored during this run.
+names:
+  0: person
+  15: cat
