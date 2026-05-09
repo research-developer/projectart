@@ -3,24 +3,30 @@
 The static handler is intentionally minimal — Python's stdlib does not have a
 clean async path for serving files alongside a websockets app, so we run an
 http.server in a thread. Renderer is a couple hundred KB; this is fine.
+
+Inbound websocket messages are forwarded to a pluggable async handler set
+via `set_message_handler()`. Each input source (mouse, gloves, wand, …)
+attaches its own handler to translate browser-side events into PointerEvents.
 """
 from __future__ import annotations
 
-import asyncio
 import http.server
 import json
 import logging
 import socketserver
 import threading
+from collections.abc import Awaitable, Callable
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
 
 import websockets
 from websockets.server import WebSocketServerProtocol
 
-from .protocol import Hello, PROTOCOL_VERSION
+from .protocol import Hello
 
 log = logging.getLogger(__name__)
+
+MessageHandler = Callable[[WebSocketServerProtocol, dict], Awaitable[None]]
 
 
 def _serialize(event) -> str:
@@ -46,9 +52,15 @@ class Server:
         self.static_dir = static_dir
         self.canvas_size = canvas_size
         self._clients: set[WebSocketServerProtocol] = set()
-        self._ws_server: websockets.server.Serve | None = None
+        self._ws_server = None
         self._http_server: socketserver.ThreadingTCPServer | None = None
         self._http_thread: threading.Thread | None = None
+        self._message_handler: MessageHandler | None = None
+
+    def set_message_handler(self, handler: MessageHandler | None) -> None:
+        """Register an async callback to receive inbound JSON messages from clients.
+        Pass None to clear."""
+        self._message_handler = handler
 
     async def start(self) -> None:
         self._start_http()
@@ -65,8 +77,7 @@ class Server:
                 super().__init__(*args, directory=str(static_dir), **kwargs)
 
             def log_message(self, fmt, *args):
-                # quiet
-                pass
+                pass  # quiet
 
         srv = socketserver.ThreadingTCPServer((self.ws_host, self.http_port), Handler)
         srv.daemon_threads = True
@@ -74,7 +85,12 @@ class Server:
         thread.start()
         self._http_server = srv
         self._http_thread = thread
-        log.info("http static at http://%s:%d/  (root=%s)", self.ws_host, self.http_port, static_dir)
+        log.info(
+            "http static at http://%s:%d/  (root=%s)",
+            self.ws_host,
+            self.http_port,
+            static_dir,
+        )
 
     async def _handle_client(self, ws: WebSocketServerProtocol) -> None:
         self._clients.add(ws)
@@ -82,7 +98,19 @@ class Server:
         try:
             hello = Hello(canvas_w=self.canvas_size[0], canvas_h=self.canvas_size[1])
             await ws.send(_serialize(hello))
-            await ws.wait_closed()
+            async for raw in ws:
+                if self._message_handler is None:
+                    continue
+                try:
+                    msg = json.loads(raw)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(msg, dict):
+                    continue
+                try:
+                    await self._message_handler(ws, msg)
+                except Exception:
+                    log.exception("message handler raised on %r", msg.get("type"))
         finally:
             self._clients.discard(ws)
             log.info("client disconnected (%d total)", len(self._clients))

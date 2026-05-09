@@ -22,6 +22,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--http-port", type=int, default=8000)
     p.add_argument("--webcam-a", default=None, help="rtsp/url for cam A (10.0.0.33)")
     p.add_argument("--webcam-b", default=None, help="rtsp/url for cam B (10.0.0.34)")
+    p.add_argument(
+        "--yolo-weights",
+        default=None,
+        help="path to YOLO weights (.pt/.onnx). If unset, falls back to yolov8n.pt",
+    )
     p.add_argument("--recalibrate", action="store_true")
     p.add_argument("--log", default="INFO")
     return p.parse_args(argv)

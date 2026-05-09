@@ -32,3 +32,6 @@ saves/
 # pytest / ruff
 .pytest_cache/
 .ruff_cache/
+
+# Claude Code runtime
+.claude/
