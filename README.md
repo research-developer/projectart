@@ -18,11 +18,22 @@ A black canvas opens in the default browser. Drag with the left mouse button to 
 ## CLI
 
 ```
-python -m projectart [--input mouse|gloves|wand|androidtv]
+python -m projectart [--input mouse|gloves|scene|wand|androidtv]
                      [--canvas WxH] [--ws-host HOST] [--ws-port N] [--http-port N]
-                     [--webcam-a URL] [--webcam-b URL] [--recalibrate]
+                     [--webcam-a URL] [--webcam-b URL]
+                     [--yolo-weights PATH] [--recalibrate]
                      [--log LEVEL]
 ```
+
+### Input modes
+
+| `--input` | What it does |
+|---|---|
+| `mouse` (default) | Dev/CI path. Drag with the mouse, draw lines. No camera, no YOLO. |
+| `gloves` | Dot-glove drawing. M2 single-cam path; M3 stereo activates if calibration loaded. |
+| `scene` | Watch the Yi cameras with YOLO; track cats/people/anything in COCO; broadcast EntityEvents so the renderer overlays a labeled box on each tracked entity. |
+| `wand` *(planned)* | Single-cam ArUco wand fallback. |
+| `androidtv` *(optional)* | ADB control sidecar — only if the projector source is an Android TV. |
 
 ## Layout
 

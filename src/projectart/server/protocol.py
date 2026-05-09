@@ -54,5 +54,23 @@ class CommandEvent:
     type: Literal["command"] = "command"
 
 
+@dataclass
+class EntityEvent:
+    """One lifecycle frame for a tracked entity. Phase is `enter`, `update`,
+    or `leave`. Bbox coordinates are in canvas pixels (mapped through the
+    cam-to-canvas helper before broadcast). Renderer uses (track_id, phase)
+    to drive overlay fade-in / fade-out."""
+    track_id: int
+    class_name: str
+    phase: Literal["enter", "update", "leave"]
+    bbox_x: float       # canvas px (top-left corner x)
+    bbox_y: float       # canvas px (top-left corner y)
+    bbox_w: float       # canvas px width
+    bbox_h: float       # canvas px height
+    confidence: float = 1.0
+    ts_ms: int = 0
+    type: Literal["entity"] = "entity"
+
+
 def to_dict(event) -> dict:
     return asdict(event)

@@ -1,0 +1,218 @@
+"""Scene input source — watches the Yi cameras with YOLO and maintains a
+TrackedRegistry of cats / people / arbitrary objects.
+
+Pipeline per frame (cam-A; cam-B is optional and currently used only for
+ping-pong-fallback if cam-A's queue is empty — stereo here would be
+overkill for scene tagging):
+
+    cam-A frame → YOLO detect → registry.consume(detections)
+                                    │
+                                    ├── entity hooks (on_enter, on_update, on_leave)
+                                    │       fire BehaviorBus events for in-process
+                                    │       reactions (audio, side effects)
+                                    │
+                                    └── delta diff vs last frame
+                                            broadcast EntityEvent over WS so the
+                                            renderer can fade overlays in/out.
+
+This is the smallest piece that makes "see cat → react on screen" actually
+happen. Behaviors are wired via `BehaviorBus` and are entirely the consumer's
+problem (renderer subscribes to wire events; audio plugs into the bus).
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from typing import Callable, Optional
+
+from ..capture.yi_rtsp import YiCapture, yi_rtsp_url
+from ..detection.yolo_dots import DotDetector
+from ..server.protocol import EntityEvent
+from ..server.ws import Server
+from ..tracking import TrackedEntity, TrackedRegistry
+from ..tracking.builtins import Cat, GenericEntity, Person
+from ..tracking.entity import BBox
+from ..tracking.events import BehaviorBus
+
+log = logging.getLogger(__name__)
+
+
+def _identity_canvas_mapper(canvas_size: tuple[int, int]):
+    """Linear cam-pixel → canvas-pixel rescale. Wrong for projector
+    geometry; right enough to show overlays for cats/people."""
+    cw, ch = canvas_size
+
+    def to_canvas(cam_xywh: tuple[float, float, float, float], frame_shape) -> tuple[float, float, float, float]:
+        h, w = frame_shape[:2]
+        cx, cy, bw, bh = cam_xywh
+        sx, sy = cw / max(1, w), ch / max(1, h)
+        return (cx - bw / 2) * sx, (cy - bh / 2) * sy, bw * sx, bh * sy
+
+    return to_canvas
+
+
+class ScenePublisher:
+    """Owns the camera capture, the YOLO detector, the registry, and the
+    BehaviorBus. One per cam-pair; small enough to compose into a multi-cam
+    setup later."""
+
+    def __init__(
+        self,
+        canvas_size: tuple[int, int],
+        server: Server,
+        camera_url_a: str,
+        camera_url_b: Optional[str] = None,
+        yolo_weights_path: Optional[str] = None,
+        target_hz: int = 15,
+        entity_types: Optional[list[type[TrackedEntity]]] = None,
+        fallback_type: Optional[type[TrackedEntity]] = GenericEntity,
+        bus: Optional[BehaviorBus] = None,
+    ):
+        self.canvas_size = canvas_size
+        self.server = server
+        self.target_hz = target_hz
+        self._period = 1.0 / max(1, target_hz)
+
+        self.capture_a = YiCapture(url=camera_url_a, name="cam-a")
+        self.capture_b: YiCapture | None = (
+            YiCapture(url=camera_url_b, name="cam-b") if camera_url_b else None
+        )
+        self.detector = DotDetector(weights_path=yolo_weights_path)
+
+        self.bus = bus if bus is not None else BehaviorBus()
+        self.registry = TrackedRegistry(
+            entity_types=entity_types if entity_types is not None else [Cat, Person],
+            fallback_type=fallback_type,
+        )
+
+        self._to_canvas = _identity_canvas_mapper(canvas_size)
+        # delta-diff state for emitting enter/update/leave wire events
+        self._known_bboxes: dict[int, tuple[float, float, float, float]] = {}
+        self._known_meta: dict[int, tuple[str, float]] = {}     # track_id → (class_name, last_conf)
+
+    # ---- public lifecycle ----
+
+    async def run(self) -> None:
+        log.info(
+            "scene publisher starting (cam-a=%s, cam-b=%s, target_hz=%d)",
+            self.capture_a.url,
+            self.capture_b.url if self.capture_b else "(none)",
+            self.target_hz,
+        )
+        self.capture_a.start()
+        if self.capture_b is not None:
+            self.capture_b.start()
+        try:
+            await self._loop()
+        finally:
+            self.capture_a.stop()
+            if self.capture_b is not None:
+                self.capture_b.stop()
+
+    # ---- helpers used by tests / external callers ----
+
+    def step(self, detections: list, ts: float) -> list[EntityEvent]:
+        """Pure: take a list of `Detection` objects + a timestamp, run them
+        through the registry, and return the list of EntityEvents the
+        publisher would broadcast. No camera, no I/O. Used by tests and
+        callers that pre-detected on their own pipeline."""
+        self.registry.consume(detections, ts=ts)
+        return self._compute_events(ts_ms=int(ts * 1000), frame_shape=(1080, 1920, 3))
+
+    # ---- inner loop ----
+
+    async def _loop(self) -> None:
+        while True:
+            t_iter_start = time.monotonic()
+            frame = self.capture_a.latest()
+            if frame is None and self.capture_b is not None:
+                frame = self.capture_b.latest()
+            if frame is None:
+                await asyncio.sleep(self._period)
+                continue
+
+            detections = self.detector(frame.image)
+            now = time.monotonic()
+            self.registry.consume(detections, ts=now)
+
+            events = self._compute_events(ts_ms=frame.ts_ms, frame_shape=frame.image.shape)
+            for ev in events:
+                await self.server.broadcast(ev)
+                # Also fire on the in-process bus so audio / overlays /
+                # any other Python-side reactions can subscribe.
+                self.bus.emit(f"entity.{ev.phase}", event=ev)
+                self.bus.emit(f"entity.{ev.phase}.{ev.class_name}", event=ev)
+
+            elapsed = time.monotonic() - t_iter_start
+            await asyncio.sleep(max(0.0, self._period - elapsed))
+
+    # ---- delta-diff (broken out for testability) ----
+
+    def _compute_events(self, ts_ms: int, frame_shape) -> list[EntityEvent]:
+        events: list[EntityEvent] = []
+        current_ids: set[int] = set()
+
+        for ent in self.registry:
+            current_ids.add(ent.track_id)
+            bbox = self._to_canvas(
+                (ent.last_bbox.cx, ent.last_bbox.cy, ent.last_bbox.w, ent.last_bbox.h),
+                frame_shape,
+            )
+            if ent.track_id in self._known_bboxes:
+                phase = "update"
+            else:
+                phase = "enter"
+            events.append(
+                EntityEvent(
+                    track_id=ent.track_id,
+                    class_name=ent.class_name,
+                    phase=phase,
+                    bbox_x=bbox[0], bbox_y=bbox[1],
+                    bbox_w=bbox[2], bbox_h=bbox[3],
+                    confidence=ent.last_confidence,
+                    ts_ms=ts_ms,
+                )
+            )
+            self._known_bboxes[ent.track_id] = bbox
+            self._known_meta[ent.track_id] = (ent.class_name, ent.last_confidence)
+
+        # Departed = previously known but not in current registry.
+        departed = set(self._known_bboxes.keys()) - current_ids
+        for tid in departed:
+            bbox = self._known_bboxes.pop(tid)
+            class_name, conf = self._known_meta.pop(tid, ("unknown", 0.0))
+            events.append(
+                EntityEvent(
+                    track_id=tid,
+                    class_name=class_name,
+                    phase="leave",
+                    bbox_x=bbox[0], bbox_y=bbox[1],
+                    bbox_w=bbox[2], bbox_h=bbox[3],
+                    confidence=conf,
+                    ts_ms=ts_ms,
+                )
+            )
+
+        return events
+
+
+def build_scene_source(
+    canvas_size: tuple[int, int],
+    server: Server,
+    webcam_a: Optional[str],
+    webcam_b: Optional[str],
+    yolo_weights: Optional[str],
+    target_hz: int = 15,
+) -> ScenePublisher:
+    """CLI bridge — same yi-hack-v5 URL defaults as the gloves source."""
+    url_a = webcam_a or yi_rtsp_url(host="10.0.0.33", low_res=True)
+    url_b = webcam_b or yi_rtsp_url(host="10.0.0.34", low_res=True)
+    return ScenePublisher(
+        canvas_size=canvas_size,
+        server=server,
+        camera_url_a=url_a,
+        camera_url_b=url_b,
+        yolo_weights_path=yolo_weights,
+        target_hz=target_hz,
+    )

@@ -43,7 +43,6 @@ function onMessage(msg) {
   if (msg.type === 'hello') {
     canvasW = msg.canvas_w || canvasW;
     canvasH = msg.canvas_h || canvasH;
-    return;
   }
   if (msg.type === 'pointer') {
     handlePointer(msg);
@@ -52,6 +51,10 @@ function onMessage(msg) {
   if (msg.type === 'hud_anchor') {
     hud = { x: msg.x, y: msg.y, visible: !!msg.visible };
     return;
+  }
+  // Forward to the entity overlay layer
+  if (window.PA_SCENE) {
+    window.PA_SCENE.onMessage(msg);
   }
 }
 
@@ -71,6 +74,13 @@ function handlePointer(p) {
 }
 
 function draw() {
+  // Entity overlays (cats, people, etc.) on top of the canvas
+  if (window.PA_SCENE) {
+    const now = performance.now();
+    window.PA_SCENE.tick(now);
+    window.PA_SCENE.draw(window);
+  }
+
   // HUD placeholder — small reticle that follows the active hand. M4 expands.
   if (hud.visible) {
     push();

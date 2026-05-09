@@ -12,7 +12,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser("projectart")
     p.add_argument(
         "--input",
-        choices=["mouse", "gloves", "wand", "androidtv"],
+        choices=["mouse", "gloves", "scene", "wand", "androidtv"],
         default="mouse",
         help="input source (default: mouse — useful for dev without cameras)",
     )

@@ -58,6 +58,17 @@ class App:
                 yolo_weights=self.args.yolo_weights,
             )
             await source.run()
+        elif self.args.input == "scene":
+            from .inputs.scene import build_scene_source
+
+            source = build_scene_source(
+                canvas_size=self.canvas_size,
+                server=self._server,
+                webcam_a=self.args.webcam_a,
+                webcam_b=self.args.webcam_b,
+                yolo_weights=self.args.yolo_weights,
+            )
+            await source.run()
         else:
             log.warning(
                 "input=%s not yet implemented; idling.", self.args.input
