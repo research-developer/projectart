@@ -4,7 +4,26 @@
 
 (function () {
   const status = document.getElementById('status');
-  const wsUrl = `ws://${location.hostname}:8765/`;
+
+  // WS URL resolution (in priority order):
+  //   1. ?ws=wss://host[:port]   query parameter
+  //   2. localStorage 'PA_WS_URL'
+  //   3. window.PA_CONFIG?.wsUrl  (set by an inline <script> in index.html)
+  //   4. ws://<page-host>:8765/   (default — works when serving locally)
+  function resolveWsUrl() {
+    const fromQuery = new URLSearchParams(location.search).get('ws');
+    if (fromQuery) return fromQuery;
+    try {
+      const fromStorage = window.localStorage?.getItem('PA_WS_URL');
+      if (fromStorage) return fromStorage;
+    } catch (_) {}
+    if (window.PA_CONFIG?.wsUrl) return window.PA_CONFIG.wsUrl;
+    // On a Vercel preview the page is on https; default to wss on port 8765.
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${location.hostname}:8765/`;
+  }
+
+  const wsUrl = resolveWsUrl();
   let socket = null;
   let backoff = 250;
   const listeners = { open: [], close: [], message: [] };

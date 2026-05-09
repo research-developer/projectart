@@ -22,6 +22,9 @@
 </head>
 <body>
   <div id="status">connecting…</div>
+  <div id="hint" style="position:fixed;bottom:10px;left:10px;color:rgba(255,255,255,0.4);font:11px ui-monospace,Menlo,monospace;background:rgba(0,0,0,0.35);padding:6px 10px;border-radius:8px;pointer-events:none;user-select:none;max-width:520px">
+    Add <code>?ws=ws://&lt;backend-host&gt;:8765/</code> to the URL to point at a remote backend. Default tries <code>ws://&lt;page-host&gt;:8765/</code>.
+  </div>
   <script src="ws_client.js"></script>
   <script src="scene.js"></script>
   <script src="sketch.js"></script>
