@@ -1,0 +1,132 @@
+"""Calibration persistence — load/save `~/.projectart/calib.json`.
+
+Schema matches `docs/superpowers/specs/2026-05-09-projectart-design.md` §6.4.
+We use pydantic for validation so a typo'd or partial file fails loudly
+instead of silently mis-aiming the wall.
+
+Numpy arrays are serialized as nested lists (json-friendly). On load we
+return numpy arrays for downstream geometry code.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
+
+log = logging.getLogger(__name__)
+
+CALIB_VERSION = 1
+DEFAULT_CALIB_PATH = Path(os.environ.get("PROJECTART_CALIB", "~/.projectart/calib.json")).expanduser()
+
+
+def _matrix_validator(rows: int, cols: int):
+    """Build a pydantic field validator that asserts a 2D list has the right shape."""
+
+    def check(v):
+        if v is None:
+            return v
+        arr = np.asarray(v, dtype=np.float64)
+        if arr.shape != (rows, cols):
+            raise ValueError(f"expected shape ({rows},{cols}); got {arr.shape}")
+        return arr.tolist()
+
+    return check
+
+
+class CameraIntrinsics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    url: str
+    K: list[list[float]] = Field(min_length=3, max_length=3)
+    dist: list[float] = Field(min_length=4, max_length=14)
+
+
+class StereoExtrinsics(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    R_a_to_b: list[list[float]] = Field(min_length=3, max_length=3)
+    t_a_to_b: list[float] = Field(min_length=3, max_length=3)
+
+
+class WallPlaneSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    normal: list[float] = Field(min_length=3, max_length=3)
+    centroid: list[float] = Field(min_length=3, max_length=3)
+
+
+class UvBasisSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    u: list[float] = Field(min_length=3, max_length=3)
+    v: list[float] = Field(min_length=3, max_length=3)
+
+
+class CanvasSize(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    w: int = 1920
+    h: int = 1080
+
+
+class CalibrationDoc(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: int = CALIB_VERSION
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    canvas: CanvasSize = Field(default_factory=CanvasSize)
+    contact_epsilon_m: float = 0.015
+
+    camera_a: Optional[CameraIntrinsics] = None
+    camera_b: Optional[CameraIntrinsics] = None
+    stereo: Optional[StereoExtrinsics] = None
+    wall_plane: Optional[WallPlaneSchema] = None
+    uv_basis: Optional[UvBasisSchema] = None
+
+    # Homographies are 3x3 lists of lists. None when not yet calibrated.
+    homography_uv_to_canvas: Optional[list[list[float]]] = None
+    homography_cam_a_to_canvas: Optional[list[list[float]]] = None  # M2 4-corner shortcut
+
+
+def save_calibration(doc: CalibrationDoc, path: Path | None = None) -> Path:
+    """Atomically write the calibration to disk."""
+    target = (path or DEFAULT_CALIB_PATH).expanduser()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_text(doc.model_dump_json(indent=2))
+    os.replace(tmp, target)
+    log.info("saved calibration to %s", target)
+    return target
+
+
+def load_calibration(path: Path | None = None) -> CalibrationDoc | None:
+    """Load + validate the calibration, or return None if no file exists."""
+    target = (path or DEFAULT_CALIB_PATH).expanduser()
+    if not target.exists():
+        log.debug("no calibration at %s", target)
+        return None
+    try:
+        raw = json.loads(target.read_text())
+        doc = CalibrationDoc.model_validate(raw)
+    except Exception:
+        log.exception("failed to load calibration at %s; ignoring", target)
+        return None
+    if doc.version != CALIB_VERSION:
+        log.warning(
+            "calibration at %s has version=%d but code expects %d; recalibration recommended",
+            target,
+            doc.version,
+            CALIB_VERSION,
+        )
+    return doc
+
+
+def empty_for_canvas(canvas_w: int, canvas_h: int) -> CalibrationDoc:
+    """Convenience constructor for a fresh CalibrationDoc with just the canvas size set."""
+    return CalibrationDoc(canvas=CanvasSize(w=canvas_w, h=canvas_h))
