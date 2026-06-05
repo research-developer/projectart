@@ -26,7 +26,9 @@ class App:
         )
 
     async def run(self) -> None:
-        log.info("ProjectArt %s — input=%s canvas=%dx%d", "0.1.0", self.args.input, *self.canvas_size)
+        log.info(
+            "ProjectArt %s — input=%s canvas=%dx%d", "0.1.0", self.args.input, *self.canvas_size
+        )
 
         await self._server.start()
         log.info(
@@ -67,6 +69,17 @@ class App:
                 webcam_a=self.args.webcam_a,
                 webcam_b=self.args.webcam_b,
                 yolo_weights=self.args.yolo_weights,
+            )
+            await source.run()
+        elif self.args.input == "reactive":
+            from .inputs.reactive import build_reactive_source
+
+            source = build_reactive_source(
+                canvas_size=self.canvas_size,
+                server=self._server,
+                webcam_a=self.args.webcam_a,
+                yolo_weights=self.args.yolo_weights,
+                config_path=getattr(self.args, "reactive_config", None),
             )
             await source.run()
         else:
