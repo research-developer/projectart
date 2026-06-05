@@ -8,8 +8,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 @dataclass
@@ -70,6 +69,36 @@ class EntityEvent:
     confidence: float = 1.0
     ts_ms: int = 0
     type: Literal["entity"] = "entity"
+
+
+@dataclass
+class SceneObject:
+    """One reactive object in a SceneFrame. World units: x,y,r in [0,1];
+    vx,vy in world-units/sec. `shape` is a render hint (box|circle)."""
+
+    id: int
+    kind: str
+    shape: str
+    x: float
+    y: float
+    vx: float = 0.0
+    vy: float = 0.0
+    r: float = 0.05
+    color: str = "#39f"
+    state: str = ""
+    alpha: float = 1.0
+    angle: float = 0.0
+    track_id: int | None = None
+
+
+@dataclass
+class SceneFrame:
+    """A full snapshot of all reactive objects for one sim tick. The renderer
+    keys visuals on object id and morphs between successive frames."""
+
+    ts_ms: int
+    objects: list = field(default_factory=list)
+    type: Literal["scene_frame"] = "scene_frame"
 
 
 def to_dict(event) -> dict:
