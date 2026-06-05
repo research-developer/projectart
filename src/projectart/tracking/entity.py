@@ -26,8 +26,11 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 
+import numpy as np
+
 # Re-exported for convenience so callers can import everything from .entity
 from ..detection.yolo_dots import Detection  # noqa: F401
+from ..geometry.filter_one_euro import OneEuroFilter
 
 
 @dataclass(slots=True)
@@ -109,6 +112,14 @@ class TrackedEntity:
         now = time.monotonic() if ts is None else float(ts)
         self.first_seen_ts = now
         self.last_seen_ts = now
+        # Smoothed centre (cam px) + finite-difference velocity (cam px/s).
+        self.center: tuple[float, float] = (float(det.cx), float(det.cy))
+        self.velocity: tuple[float, float] = (0.0, 0.0)
+        self.hits: int = 1
+        self.confirmed: bool = False
+        self._pos_filter = OneEuroFilter(mincutoff=1.0, beta=0.05)
+        self._pos_filter(np.array(self.center, dtype=np.float64), t=now)
+        self._vel_ts: float = now
         # Each subclass can attach its own per-instance state; this dict
         # is a free-form bag for behaviors that don't want to subclass.
         self.attrs: dict = {}
@@ -120,11 +131,19 @@ class TrackedEntity:
 
     def on_update(self, det: Detection, ts: float) -> None:
         """Called every frame this entity is detected (after the first).
-        Default updates the bbox + last-seen timestamp; subclasses can
-        extend (call `super().on_update(det, ts)` first)."""
+        Updates bbox, smoothed centre, finite-difference velocity, hit count."""
         self.last_bbox = BBox.from_detection(det)
         self.last_confidence = float(det.confidence)
         self.last_seen_ts = ts
+        self.hits += 1
+        sm = self._pos_filter(np.array([det.cx, det.cy], dtype=np.float64), t=ts)
+        dt = max(1e-3, ts - self._vel_ts)
+        self.velocity = (
+            float((sm[0] - self.center[0]) / dt),
+            float((sm[1] - self.center[1]) / dt),
+        )
+        self.center = (float(sm[0]), float(sm[1]))
+        self._vel_ts = ts
 
     def on_leave(self) -> None:
         """Called exactly once when the entity transitions to GONE.
