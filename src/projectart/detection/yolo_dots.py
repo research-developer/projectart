@@ -37,7 +37,7 @@ class Detection:
     track_id: int | None = None
 
 
-def _parse_boxes(boxes, class_names: dict[int, str], with_ids: bool) -> list["Detection"]:
+def _parse_boxes(boxes, class_names: dict[int, str], with_ids: bool) -> list[Detection]:
     """Pure converter from an ultralytics Boxes-like object to Detections.
     Accepts anything exposing .xywh/.cls/.conf/.id with .cpu().numpy()."""
     if boxes is None or len(boxes) == 0:
@@ -88,7 +88,7 @@ class DotDetector:
         if self._model is not None:
             return
         try:
-            from ultralytics import YOLO  # noqa: WPS433
+            from ultralytics import YOLO
         except ImportError as e:
             raise RuntimeError(
                 "ultralytics is not installed. `pip install -e '.[yolo]'` "

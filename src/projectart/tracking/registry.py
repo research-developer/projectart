@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Iterable
+from collections.abc import Iterable
 
 from ..detection.yolo_dots import Detection
 from .entity import BBox, EntityState, TrackedEntity
@@ -69,13 +69,16 @@ class TrackedRegistry:
     # ---- association: tracker ids ----
 
     def _consume_by_track_id(self, dets: list[Detection], now: float) -> None:
+        skipped = sum(1 for d in dets if d.track_id is None)
+        if skipped:
+            log.debug("skipped %d detection(s) lacking track_id in track-id mode", skipped)
         for det in dets:
             if det.track_id is None:
                 continue
             internal = self._by_track.get(det.track_id)
             ent = self.entities.get(internal) if internal is not None else None
             if ent is not None:
-                if ent.state in (EntityState.ENTERING, EntityState.LEAVING):
+                if ent.confirmed and ent.state in (EntityState.ENTERING, EntityState.LEAVING):
                     ent.state = EntityState.PRESENT
                 ent.on_update(det, now)
             else:
@@ -95,7 +98,7 @@ class TrackedRegistry:
                     best, best_iou = i, iou
             if best >= 0:
                 det = unmatched.pop(best)
-                if entity.state in (EntityState.ENTERING, EntityState.LEAVING):
+                if entity.confirmed and entity.state in (EntityState.ENTERING, EntityState.LEAVING):
                     entity.state = EntityState.PRESENT
                 entity.on_update(det, now)
         for det in unmatched:

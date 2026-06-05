@@ -16,11 +16,11 @@ class CamToWorld:
     matrix: np.ndarray | None = None  # 3x3 homography, or None for linear-by-size
 
     @classmethod
-    def identity(cls) -> "CamToWorld":
+    def identity(cls) -> CamToWorld:
         return cls(matrix=None)
 
     @classmethod
-    def from_config(cls, spec) -> "CamToWorld":
+    def from_config(cls, spec: str | list | None) -> CamToWorld:
         if spec is None or spec == "identity":
             return cls(matrix=None)
         m = np.asarray(spec, dtype=np.float64)

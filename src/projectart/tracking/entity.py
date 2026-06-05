@@ -5,10 +5,11 @@ Lifecycle:
     [no entity]
         │  first detection of class C with no nearby existing entity
         ▼
-    ENTERING  ──► on_enter() fires once
-        │  next frame still seeing it
+    ENTERING  (no hook yet; entity is unconfirmed, may persist several frames)
+        │  seen `confirm_after_hits` times → confirmed
         ▼
-    PRESENT   ──► on_update(det) fires every frame it's seen
+    PRESENT   ──► on_enter() fires exactly once on confirmation
+        │         on_update(det) fires every frame the entity is seen
         │  no detection for `lost_after_s` seconds
         ▼
     LEAVING   (still tracked, can re-acquire)
@@ -23,7 +24,7 @@ constructor for a fresh detection.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 import numpy as np
@@ -59,7 +60,7 @@ class BBox:
     def y2(self) -> float:
         return self.cy + self.h / 2
 
-    def iou(self, other: "BBox") -> float:
+    def iou(self, other: BBox) -> float:
         ix1 = max(self.x1, other.x1)
         iy1 = max(self.y1, other.y1)
         ix2 = min(self.x2, other.x2)
@@ -75,7 +76,7 @@ class BBox:
         return inter / union if union > 0 else 0.0
 
     @classmethod
-    def from_detection(cls, det: Detection) -> "BBox":
+    def from_detection(cls, det: Detection) -> BBox:
         return cls(cx=det.cx, cy=det.cy, w=det.w, h=det.h)
 
 
@@ -132,7 +133,8 @@ class TrackedEntity:
 
     def on_update(self, det: Detection, ts: float) -> None:
         """Called every frame this entity is detected (after the first).
-        Updates bbox, smoothed centre, finite-difference velocity, hit count."""
+        Updates bbox, smoothed centre, finite-difference velocity, hit count.
+        Subclasses that override this must call `super().on_update(det, ts)` first."""
         self.last_bbox = BBox.from_detection(det)
         self.last_confidence = float(det.confidence)
         self.last_seen_ts = ts

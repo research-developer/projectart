@@ -1,6 +1,8 @@
 # tests/test_tracking_velocity.py
 from __future__ import annotations
 
+import pytest
+
 from projectart.detection.yolo_dots import Detection
 from projectart.tracking.entity import TrackedEntity
 
@@ -25,6 +27,6 @@ def test_constant_velocity_converges():
         x += 10.0
         e.on_update(_det(x, 100), ts=i * 0.1)
     vx, vy = e.velocity
-    assert vx == __import__("pytest").approx(100.0, rel=0.2)
+    assert vx == pytest.approx(100.0, rel=0.2)
     assert abs(vy) < 5.0
     assert e.hits == 12
