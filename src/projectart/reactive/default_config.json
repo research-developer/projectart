@@ -1,0 +1,33 @@
+{
+  "tracking": {
+    "tracker": "bytetrack",
+    "conf": 0.25,
+    "iou": 0.5,
+    "confirm_after_hits": 3,
+    "lost_after_s": 0.5,
+    "gone_after_s": 2.0,
+    "min_confidence": 0.0,
+    "velocity_smoothing": { "mincutoff": 1.0, "beta": 0.05 }
+  },
+  "world": { "aspect": 1.7778, "cam_to_world": "identity" },
+  "physics": {
+    "friction": 0.8, "restitution": 0.9, "momentum_transfer": 1.0,
+    "gravity": [0.0, 0.0], "default_mass": 1.0
+  },
+  "objects": {
+    "box":  { "radius": 0.06, "shape": "box",    "mass": 1.0, "color": "auto", "kinematic": true },
+    "ball": { "radius": 0.04, "shape": "circle", "mass": 1.0, "color": "#39f", "kinematic": false }
+  },
+  "spawn": [ { "kind": "ball", "x": 0.5, "y": 0.5 } ],
+  "rules": [
+    { "match": { "class": "person" },
+      "action": { "spawn": "box", "behaviors": [
+        { "follow":   { "gain": 0.5 } },
+        { "scale":    { "source": "bbox", "min": 0.03, "max": 0.12 } },
+        { "colorize": { "source": "velocity", "mapping": "speed_to_hue" } }
+      ] } },
+    { "match": { "class": "*" },
+      "action": { "spawn": "box", "behaviors": [ { "follow": { "gain": 0.6 } } ] } }
+  ],
+  "sim": { "tick_hz": 30 }
+}
