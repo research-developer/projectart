@@ -24,7 +24,7 @@
       "action": { "spawn": "box", "behaviors": [
         { "follow":   { "gain": 0.5 } },
         { "scale":    { "source": "bbox", "min": 0.03, "max": 0.12 } },
-        { "colorize": { "source": "velocity", "mapping": "speed_to_hue" } }
+        { "colorize": { "mapping": "speed_to_hue" } }
       ] } },
     { "match": { "class": "*" },
       "action": { "spawn": "box", "behaviors": [ { "follow": { "gain": 0.6 } } ] } }

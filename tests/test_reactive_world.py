@@ -55,6 +55,18 @@ def test_departed_track_despawns_box():
     assert not any(o.kind == "box" for o in sim.objects)
 
 
+def test_reacquire_mid_despawn_cancels_fade():
+    sim = Simulator(_cfg())
+    sim.tick([_person(1, 0.5, 0.5)], dt=0.033)   # bind
+    sim.tick([], dt=0.05)                          # partial despawn (despawn_ms=100)
+    box = next(o for o in sim.objects if o.kind == "box")
+    assert box.alpha < 1.0 and box.despawning
+    sim.tick([_person(1, 0.5, 0.5)], dt=0.033)     # track returns
+    box = next(o for o in sim.objects if o.kind == "box")
+    assert box.alpha == pytest.approx(1.0)
+    assert box.despawning is False
+
+
 def test_fast_box_pushes_ball():
     sim = Simulator(_cfg())
     # Spawn box at the ball, moving fast in +x; ball should gain +x velocity.

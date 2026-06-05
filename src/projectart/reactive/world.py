@@ -99,7 +99,12 @@ class Simulator:
     def _object_for_track(self, tv: TrackedView) -> ReactiveObject | None:
         obj_id = self._bound.get(tv.track_id)
         if obj_id is not None:
-            return self._by_id(obj_id)
+            obj = self._by_id(obj_id)
+            if obj is not None and obj.despawning:
+                obj.despawning = False
+                obj.alpha = 1.0
+                self._despawn_age.pop(obj_id, None)
+            return obj
         rule = match_rule(self.config.rules, tv.view.class_name)
         if rule is None:
             return None

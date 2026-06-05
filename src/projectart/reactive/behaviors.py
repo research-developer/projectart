@@ -36,7 +36,7 @@ def apply_behavior(
     if name == "follow":
         if entity is None:
             return
-        gain = float(params.get("gain", 0.5))
+        gain = _clamp(float(params.get("gain", 0.5)), -1.0, 1.0)  # >1 overshoots; <-1 over-flees
         obj.x += (entity.x - obj.x) * gain
         obj.y += (entity.y - obj.y) * gain
     elif name == "scale":

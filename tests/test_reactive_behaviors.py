@@ -35,11 +35,11 @@ def test_scale_from_bbox_clamped():
 
 def test_colorize_speed_to_hue_sets_color_and_state():
     o = ReactiveObject(id=1, kind="box", x=0, y=0)
-    apply_behavior(o, ("colorize", {"source": "velocity", "mapping": "speed_to_hue"}),
+    apply_behavior(o, ("colorize", {"mapping": "speed_to_hue"}),
                    _view(vx=2.0, vy=0.0))
     assert o.color.startswith("hsl(")
     o_slow = ReactiveObject(id=2, kind="box", x=0, y=0)
-    apply_behavior(o_slow, ("colorize", {"source": "velocity", "mapping": "speed_to_hue"}),
+    apply_behavior(o_slow, ("colorize", {"mapping": "speed_to_hue"}),
                    _view(vx=0.0, vy=0.0))
     assert o_slow.color != o.color
 
