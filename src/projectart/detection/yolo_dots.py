@@ -32,6 +32,7 @@ class Detection:
     h: float           # bbox height in pixels
     confidence: float
     class_name: str = ""
+    track_id: int | None = None
 
 
 class DotDetector:

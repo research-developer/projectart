@@ -106,6 +106,7 @@ class TrackedEntity:
         self.track_id = track_id
         self.class_name = det.class_name or f"class_{det.class_id}"
         self.class_id = det.class_id
+        self.track_key: int | None = det.track_id
         self.state = EntityState.ENTERING
         self.last_bbox = BBox.from_detection(det)
         self.last_confidence = float(det.confidence)
