@@ -34,7 +34,7 @@ class ReactiveSource:
         yolo_weights_path: str | None = None,
         frame_size: tuple[int, int] = (640, 360),
     ):
-        self.canvas_size = canvas_size
+        self.canvas_size = canvas_size  # reserved; the Server owns canvas size / Hello broadcast
         self.server = server
         self.config = config
         self.frame_w, self.frame_h = frame_size
@@ -51,7 +51,8 @@ class ReactiveSource:
             min_confidence=config.tracking.min_confidence,
         )
         self.sim = Simulator(config)
-        self._prev_world: dict[int, tuple[float, float, float]] = {}  # track_id -> (x,y,ts)
+        # tkey (track_key or internal track_id) -> (wx, wy, ts)
+        self._prev_world: dict[int, tuple[float, float, float]] = {}
 
         self.capture_a: YiCapture | None = None
         self.detector: DotDetector | None = None
@@ -66,7 +67,8 @@ class ReactiveSource:
 
     # ---- pure step (no camera) ----
 
-    def step(self, detections: list[Detection], ts: float) -> SceneFrame:
+    def step(self, detections: list[Detection], ts: float, dt: float | None = None) -> SceneFrame:
+        tick_dt = self._period if dt is None else dt
         self.registry.consume(detections, ts=ts)
         views: list[TrackedView] = []
         for ent in self.registry.confirmed():
@@ -86,7 +88,7 @@ class ReactiveSource:
                                 confidence=ent.last_confidence,
                                 dwell_s=ts - ent.first_seen_ts, class_name=ent.class_name),
             ))
-        objs = self.sim.tick(views, dt=self._period)
+        objs = self.sim.tick(views, dt=tick_dt)
         return SceneFrame(
             ts_ms=int(ts * 1000),
             objects=[SceneObject(
@@ -98,11 +100,16 @@ class ReactiveSource:
     # ---- live loop ----
 
     async def run(self) -> None:
-        assert self.capture_a is not None and self.detector is not None and self.server is not None
+        if self.capture_a is None or self.detector is None or self.server is None:
+            raise RuntimeError(
+                "run() requires camera_url_a, a detector, and a server; "
+                "use for_testing() for headless step() calls"
+            )
         log.info("reactive source starting (cam-a=%s, tick_hz=%d)",
                  self.capture_a.url, self.config.sim.tick_hz)
         self.capture_a.start()
         loop_t0 = time.monotonic()
+        last_tick = time.monotonic()
         try:
             while True:
                 t0 = time.monotonic()
@@ -112,7 +119,10 @@ class ReactiveSource:
                     continue
                 self.frame_h, self.frame_w = frame.image.shape[:2]
                 dets = self.detector.track(frame.image, tracker=self.config.tracking.tracker)
-                scene = self.step(dets, ts=time.monotonic() - loop_t0)
+                now = time.monotonic()
+                real_dt = now - last_tick
+                last_tick = now
+                scene = self.step(dets, ts=now - loop_t0, dt=real_dt)
                 await self.server.broadcast(scene)
                 await asyncio.sleep(max(0.0, self._period - (time.monotonic() - t0)))
         finally:

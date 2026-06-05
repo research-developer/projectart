@@ -1,7 +1,7 @@
 """Wire protocol between the Python backend and the browser renderer.
 
 Messages are JSON. Every message has a `type` field. Future schema changes go
-through `version` (current = 1).
+through `version` (current = 2).
 """
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ class SceneFrame:
     keys visuals on object id and morphs between successive frames."""
 
     ts_ms: int
-    objects: list = field(default_factory=list)
+    objects: list[SceneObject] = field(default_factory=list)
     type: Literal["scene_frame"] = "scene_frame"
 
 

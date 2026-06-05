@@ -35,3 +35,12 @@ def test_step_keeps_same_object_id_across_frames():
     id1 = f1.objects[0].id
     f2 = src.step([_det(1, 500, 300)], ts=0.05)
     assert f2.objects[0].id == id1   # morph, not recreate
+
+
+def test_velocity_computed_on_second_frame():
+    src = ReactiveSource.for_testing(_cfg(), frame_w=640, frame_h=360)
+    src.step([_det(1, 320, 180)], ts=0.0)        # first frame: vx=vy=0
+    f2 = src.step([_det(1, 640, 360)], ts=1.0)   # moved (0.5,0.5) world in 1s
+    box = f2.objects[0]
+    assert abs(box.vx - 0.5) < 1e-4
+    assert abs(box.vy - 0.5) < 1e-4
