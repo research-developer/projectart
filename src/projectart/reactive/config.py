@@ -16,13 +16,14 @@ from ..tracking.config import TrackingConfig
 @dataclass(slots=True)
 class WorldConfig:
     aspect: float = 16 / 9
-    cam_to_world: object = "identity"  # "identity" or a 3x3 list (homography)
+    cam_to_world: str | list = "identity"  # "identity" or a 3x3 list (homography)
 
 
 @dataclass(slots=True)
 class PhysicsConfig:
     friction: float = 0.8
     restitution: float = 0.9
+    # impulse scale: 1.0=normal, >1 super-elastic (artistic); must be >=0
     momentum_transfer: float = 1.0
     gravity: tuple[float, float] = (0.0, 0.0)
     default_mass: float = 1.0
@@ -85,8 +86,8 @@ class ReactiveConfig:
             physics=PhysicsConfig(
                 friction=float(p.get("friction", 0.8)),
                 restitution=float(p.get("restitution", 0.9)),
-                momentum_transfer=float(p.get("momentum_transfer", 1.0)),
-                gravity=tuple(p.get("gravity", (0.0, 0.0))),
+                momentum_transfer=max(0.0, float(p.get("momentum_transfer", 1.0))),
+                gravity=tuple(float(v) for v in p.get("gravity", (0.0, 0.0))),
                 default_mass=float(p.get("default_mass", 1.0)),
             ),
             objects=objects,

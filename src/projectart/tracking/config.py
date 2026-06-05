@@ -1,3 +1,4 @@
+"""TrackingConfig — tracker + hysteresis + velocity-smoothing parameters."""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -18,7 +19,7 @@ class TrackingConfig:
     @classmethod
     def from_dict(cls, d: dict | None) -> TrackingConfig:
         d = d or {}
-        vs = d.get("velocity_smoothing", {})
+        vs = d.get("velocity_smoothing") or {}
         return cls(
             tracker=d.get("tracker", "bytetrack"),
             conf=float(d.get("conf", 0.25)),

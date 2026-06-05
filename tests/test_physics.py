@@ -35,6 +35,7 @@ def test_kinematic_imparts_momentum_to_ball():
     ball = ReactiveObject(id=2, kind="ball", x=0.58, y=0.5, vx=0.0, radius=0.05, mass=1.0)
     resolve_collisions([hand, ball], p)
     assert ball.vx > 0.0  # pushed in +x (swipe direction)
+    assert ball.vx == pytest.approx(2.0)   # elastic, equal mass, hand not slowed
     assert hand.vx == 1.0  # kinematic unaffected
 
 
