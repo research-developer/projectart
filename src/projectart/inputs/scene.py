@@ -25,7 +25,7 @@ import asyncio
 import logging
 import time
 
-from ..audio.cat_audio import CatAudioPlayer
+from ..audio.cat_audio import CatAudioConfig, CatAudioPlayer
 from ..capture.yi_rtsp import YiCapture, yi_rtsp_url
 from ..detection.yolo_dots import DotDetector
 from ..server.protocol import EntityEvent
@@ -76,6 +76,7 @@ class ScenePublisher:
         fallback_type: type[TrackedEntity] | None = GenericEntity,
         bus: BehaviorBus | None = None,
         enable_cat_audio: bool = True,
+        audio_device: str | None = None,
         confirm_after_hits: int = 2,
         gone_after_s: float = 2.5,
         near_area_frac: float = 0.18,
@@ -112,7 +113,7 @@ class ScenePublisher:
         )
         self.cat_audio: CatAudioPlayer | None = None
         if enable_cat_audio:
-            self.cat_audio = CatAudioPlayer()
+            self.cat_audio = CatAudioPlayer(CatAudioConfig(device=audio_device))
             self.cat_audio.subscribe(self.bus)
 
         self._to_canvas = _identity_canvas_mapper(canvas_size)
@@ -238,6 +239,7 @@ def build_scene_source(
     yolo_weights: str | None,
     target_hz: int = 15,
     enable_cat_audio: bool = True,
+    audio_device: str | None = None,
 ) -> ScenePublisher:
     """CLI bridge — same yi-hack-v5 URL defaults as the gloves source."""
     url_a = webcam_a or yi_rtsp_url(host="10.0.0.33", low_res=True)
@@ -250,4 +252,5 @@ def build_scene_source(
         yolo_weights_path=yolo_weights,
         target_hz=target_hz,
         enable_cat_audio=enable_cat_audio,
+        audio_device=audio_device,
     )

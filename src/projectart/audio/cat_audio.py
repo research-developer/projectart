@@ -26,8 +26,18 @@ DEFAULT_AUDIO_DIR = Path("~/.projectart/audio/cat").expanduser()
 
 
 def afplay(path: Path) -> None:
-    """Non-blocking playback via the macOS `afplay` CLI."""
+    """Non-blocking playback to the system DEFAULT output via the macOS `afplay` CLI."""
     subprocess.Popen(["afplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def play_on_device(path: Path, device_index: int) -> None:
+    """Non-blocking playback to a SPECIFIC output device via sounddevice/soundfile
+    (leaves the system default output untouched)."""
+    import sounddevice as sd
+    import soundfile as sf
+
+    data, samplerate = sf.read(str(path), dtype="float32")
+    sd.play(data, samplerate, device=device_index)  # returns immediately
 
 
 @dataclass(slots=True)
@@ -37,6 +47,7 @@ class CatAudioConfig:
     enabled: bool = True
     cat_class: str = "cat"
     person_class: str = "person"
+    device: str | None = None  # output device name (substring); None = default output
 
 
 class CatAudioPlayer:
@@ -44,9 +55,23 @@ class CatAudioPlayer:
                  play: Callable[[Path], None] | None = None,
                  rng: random.Random | None = None):
         self.cfg = config or CatAudioConfig()
-        self._play = play or afplay
         self._rng = rng or random.Random()
         self._last: dict[str, float] = {}  # situation -> ts last played
+        self._play = play or self._resolve_play()
+
+    def _resolve_play(self) -> Callable[[Path], None]:
+        """Route to a named device via sounddevice if `cfg.device` is set and found,
+        else fall back to `afplay` (system default output)."""
+        if not self.cfg.device:
+            return afplay
+        from .devices import find_device
+
+        idx = find_device(self.cfg.device)
+        if idx is None:
+            log.warning("audio device %r not found; using default output", self.cfg.device)
+            return afplay
+        log.info("cat audio routed to device [%d] %r", idx, self.cfg.device)
+        return lambda path: play_on_device(path, idx)
 
     def situation_for(self, ev) -> str | None:
         cat, person = self.cfg.cat_class, self.cfg.person_class

@@ -28,6 +28,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="path to YOLO weights (.pt/.onnx). If unset, falls back to yolov8n.pt",
     )
     p.add_argument("--reactive-config", default=None, help="path to a reactive config JSON")
+    p.add_argument("--audio-device", default=None,
+                   help="output device NAME (substring) for cat audio; default = system default")
+    p.add_argument("--list-audio-devices", action="store_true",
+                   help="list output audio devices and exit")
     p.add_argument("--recalibrate", action="store_true")
     p.add_argument("--log", default="INFO")
     return p.parse_args(argv)
@@ -35,6 +39,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.list_audio_devices:
+        from .audio.devices import format_output_devices
+
+        print(format_output_devices())
+        return 0
     logging.basicConfig(
         level=args.log,
         format="%(asctime)s %(name)s %(levelname)s %(message)s",

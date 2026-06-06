@@ -63,3 +63,17 @@ def test_missing_clip_returns_none(tmp_path):
     p, played = _player(tmp_path)  # empty audio dir
     assert p.on_event(Event("appear", "cat", 1, size="far", ts=0.0)) is None
     assert played == []
+
+
+def test_unknown_device_falls_back_to_afplay(tmp_path, monkeypatch):
+    from projectart.audio import cat_audio, devices
+    monkeypatch.setattr(devices, "list_output_devices", lambda: [])  # find_device -> None
+    p = cat_audio.CatAudioPlayer(cat_audio.CatAudioConfig(audio_dir=tmp_path, device="ghost"))
+    assert p._play is cat_audio.afplay
+
+
+def test_known_device_routes_off_afplay(tmp_path, monkeypatch):
+    from projectart.audio import cat_audio, devices
+    monkeypatch.setattr(devices, "list_output_devices", lambda: [(3, "Echo Show-E99")])
+    p = cat_audio.CatAudioPlayer(cat_audio.CatAudioConfig(audio_dir=tmp_path, device="echo"))
+    assert p._play is not cat_audio.afplay
