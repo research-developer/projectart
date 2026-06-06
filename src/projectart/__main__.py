@@ -29,7 +29,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     p.add_argument("--reactive-config", default=None, help="path to a reactive config JSON")
     p.add_argument("--game", default="whack", help="floor game to run (default: whack)")
-    p.add_argument("--camera-index", type=int, default=0, help="local camera index for --input floor")  # noqa: E501
+    p.add_argument(
+        "--camera-index", type=int, default=0,
+        help="local camera index for --input floor",
+    )
     p.add_argument("--recalibrate", action="store_true")
     p.add_argument("--log", default="INFO")
     return p.parse_args(argv)

@@ -30,7 +30,13 @@ class ArucoDetector:
             return
         import cv2
 
-        d = cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, self._dictionary))
+        dict_id = getattr(cv2.aruco, self._dictionary, None)
+        if dict_id is None:
+            raise ValueError(
+                f"unknown ArUco dictionary {self._dictionary!r} "
+                "(e.g. DICT_4X4_50, DICT_5X5_100, DICT_6X6_250)"
+            )
+        d = cv2.aruco.getPredefinedDictionary(dict_id)
         params = cv2.aruco.DetectorParameters()
         self._detector = cv2.aruco.ArucoDetector(d, params)
 

@@ -11,6 +11,7 @@ from projectart.calibration.persist import (
     CALIB_VERSION,
     CalibrationDoc,
     CameraIntrinsics,
+    StageSchema,
     StereoExtrinsics,
     UvBasisSchema,
     WallPlaneSchema,
@@ -118,3 +119,11 @@ def test_stage_round_trips_through_doc():
 
 def test_no_stage_section_returns_none():
     assert stage_calibration_from_doc(CalibrationDoc()) is None
+
+
+def test_stage_schema_rejects_non_3x3():
+    with pytest.raises(ValidationError):
+        StageSchema(
+            cam_to_stage=[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
+            stage_to_projector=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        )

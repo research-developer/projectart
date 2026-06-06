@@ -88,8 +88,8 @@ class App:
             source = build_floor_source(
                 canvas_size=self.canvas_size,
                 server=self._server,
-                game=getattr(self.args, "game", "whack"),
-                camera_index=getattr(self.args, "camera_index", 0),
+                game=self.args.game,
+                camera_index=self.args.camera_index,
             )
             await source.run()
         else:
