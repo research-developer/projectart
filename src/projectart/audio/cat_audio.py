@@ -22,7 +22,11 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-DEFAULT_AUDIO_DIR = Path("~/.projectart/audio/cat").expanduser()
+DEFAULT_AUDIO_DIR = Path("~/.projectart/audio").expanduser()  # searched recursively (cat/, people/)
+
+
+def _slug(name: str) -> str:
+    return name.lower().replace(" ", "_")
 
 
 def afplay(path: Path) -> None:
@@ -73,35 +77,46 @@ class CatAudioPlayer:
         log.info("cat audio routed to device [%d] %r", idx, self.cfg.device)
         return lambda path: play_on_device(path, idx)
 
-    def situation_for(self, ev) -> str | None:
+    def situations_for(self, ev) -> list[str]:
+        """Ordered candidate situation keys for an Event (most specific first).
+        Name-aware keys (greet_<name>, intersect_*_<name>) fall back to generic."""
         cat, person = self.cfg.cat_class, self.cfg.person_class
+        slug = _slug(ev.name) if getattr(ev, "name", None) else None
+        if ev.kind == "recognize" and slug:
+            return [f"greet_{slug}"]
         if ev.kind == "appear" and ev.class_name == cat:
-            return "cat_appear_near" if ev.size == "near" else "cat_appear_far"
+            return ["cat_appear_near" if ev.size == "near" else "cat_appear_far"]
         if ev.kind == "disappear" and ev.class_name == cat:
-            return "cat_leave"
+            return ["cat_leave"]
         if ev.kind == "intersect" and {ev.class_name, ev.other_class} == {cat, person}:
-            return self._rng.choice(["intersect_look", "intersect_benice"])
-        return None
+            base = self._rng.choice(["intersect_look", "intersect_benice"])
+            return [f"{base}_{slug}", base] if slug else [base]
+        return []
 
     def clip_for(self, situation: str) -> Path | None:
-        clips = sorted(self.cfg.audio_dir.glob(f"{situation}__*.wav"))
+        clips = sorted(self.cfg.audio_dir.rglob(f"{situation}__*.wav"))
         return self._rng.choice(clips) if clips else None
 
     def on_event(self, ev) -> Path | None:
         """Decide + play a clip for an Event. Returns the clip played, or None."""
         if not self.cfg.enabled:
             return None
-        situation = self.situation_for(ev)
-        if situation is None:
+        candidates = self.situations_for(ev)
+        if not candidates:
             return None
-        last = self._last.get(situation)
+        key = candidates[0]  # cooldown keyed on the most-specific situation
+        last = self._last.get(key)
         if last is not None and (ev.ts - last) < self.cfg.cooldown_s:
             return None
-        clip = self.clip_for(situation)
+        clip = None
+        for situation in candidates:
+            clip = self.clip_for(situation)
+            if clip is not None:
+                break
         if clip is None:
-            log.debug("no clip for situation %r in %s", situation, self.cfg.audio_dir)
+            log.debug("no clip for %r in %s", candidates, self.cfg.audio_dir)
             return None
-        self._last[situation] = ev.ts
+        self._last[key] = ev.ts
         try:
             self._play(clip)
         except Exception:

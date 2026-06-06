@@ -19,18 +19,28 @@ def _wavs(tmp_path, *names):
         (tmp_path / n).touch()
 
 
-def test_situation_for_appear_sizes(tmp_path):
+def test_situations_for_appear_sizes(tmp_path):
     p, _ = _player(tmp_path)
-    assert p.situation_for(Event("appear", "cat", 1, size="far")) == "cat_appear_far"
-    assert p.situation_for(Event("appear", "cat", 1, size="near")) == "cat_appear_near"
+    assert p.situations_for(Event("appear", "cat", 1, size="far")) == ["cat_appear_far"]
+    assert p.situations_for(Event("appear", "cat", 1, size="near")) == ["cat_appear_near"]
 
 
-def test_situation_for_disappear_intersect_and_none(tmp_path):
+def test_situations_for_disappear_intersect_and_none(tmp_path):
     p, _ = _player(tmp_path)
-    assert p.situation_for(Event("disappear", "cat", 1)) == "cat_leave"
-    s = p.situation_for(Event("intersect", "person", 1, other_class="cat", other_track_id=2))
-    assert s in ("intersect_look", "intersect_benice")
-    assert p.situation_for(Event("appear", "dog", 1)) is None
+    assert p.situations_for(Event("disappear", "cat", 1)) == ["cat_leave"]
+    s = p.situations_for(Event("intersect", "person", 1, other_class="cat", other_track_id=2))
+    assert s[0] in ("intersect_look", "intersect_benice")
+    assert p.situations_for(Event("appear", "dog", 1)) == []
+
+
+def test_situations_for_recognize_and_named_intersect(tmp_path):
+    p, _ = _player(tmp_path)
+    assert p.situations_for(Event("recognize", "person", 1, name="Samaya")) == ["greet_samaya"]
+    cands = p.situations_for(
+        Event("intersect", "person", 1, other_class="cat", other_track_id=2, name="Preston Temple")
+    )
+    assert cands[0].endswith("_preston_temple")
+    assert cands[1] in ("intersect_look", "intersect_benice")
 
 
 def test_clip_for(tmp_path):
