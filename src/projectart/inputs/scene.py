@@ -24,16 +24,21 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Callable, Optional
 
+from ..audio.cat_audio import CatAudioPlayer
 from ..capture.yi_rtsp import YiCapture, yi_rtsp_url
 from ..detection.yolo_dots import DotDetector
 from ..server.protocol import EntityEvent
 from ..server.ws import Server
 from ..tracking import TrackedEntity, TrackedRegistry
 from ..tracking.builtins import Cat, GenericEntity, Person
-from ..tracking.entity import BBox
 from ..tracking.events import BehaviorBus
+from ..tracking.triggers import (
+    AppearTrigger,
+    DisappearTrigger,
+    IntersectTrigger,
+    TriggerEngine,
+)
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +48,9 @@ def _identity_canvas_mapper(canvas_size: tuple[int, int]):
     geometry; right enough to show overlays for cats/people."""
     cw, ch = canvas_size
 
-    def to_canvas(cam_xywh: tuple[float, float, float, float], frame_shape) -> tuple[float, float, float, float]:
+    def to_canvas(
+        cam_xywh: tuple[float, float, float, float], frame_shape
+    ) -> tuple[float, float, float, float]:
         h, w = frame_shape[:2]
         cx, cy, bw, bh = cam_xywh
         sx, sy = cw / max(1, w), ch / max(1, h)
@@ -62,12 +69,17 @@ class ScenePublisher:
         canvas_size: tuple[int, int],
         server: Server,
         camera_url_a: str,
-        camera_url_b: Optional[str] = None,
-        yolo_weights_path: Optional[str] = None,
+        camera_url_b: str | None = None,
+        yolo_weights_path: str | None = None,
         target_hz: int = 15,
-        entity_types: Optional[list[type[TrackedEntity]]] = None,
-        fallback_type: Optional[type[TrackedEntity]] = GenericEntity,
-        bus: Optional[BehaviorBus] = None,
+        entity_types: list[type[TrackedEntity]] | None = None,
+        fallback_type: type[TrackedEntity] | None = GenericEntity,
+        bus: BehaviorBus | None = None,
+        enable_cat_audio: bool = True,
+        confirm_after_hits: int = 2,
+        gone_after_s: float = 2.5,
+        near_area_frac: float = 0.18,
+        intersect_overlap: float = 0.4,
     ):
         self.canvas_size = canvas_size
         self.server = server
@@ -81,10 +93,27 @@ class ScenePublisher:
         self.detector = DotDetector(weights_path=yolo_weights_path)
 
         self.bus = bus if bus is not None else BehaviorBus()
+        # Generous, parameterized tolerance: confirm over a couple frames (kills
+        # one-frame false cats) and coast through brief dropouts before "gone".
         self.registry = TrackedRegistry(
             entity_types=entity_types if entity_types is not None else [Cat, Person],
             fallback_type=fallback_type,
+            confirm_after_hits=confirm_after_hits,
+            gone_after_s=gone_after_s,
         )
+        # Triggers -> Events on the bus (appear/disappear cat, person∩cat intersect).
+        self.triggers = TriggerEngine(
+            [
+                AppearTrigger("cat", near_area_frac=near_area_frac),
+                DisappearTrigger("cat"),
+                IntersectTrigger("person", "cat", min_overlap=intersect_overlap),
+            ],
+            bus=self.bus,
+        )
+        self.cat_audio: CatAudioPlayer | None = None
+        if enable_cat_audio:
+            self.cat_audio = CatAudioPlayer()
+            self.cat_audio.subscribe(self.bus)
 
         self._to_canvas = _identity_canvas_mapper(canvas_size)
         # delta-diff state for emitting enter/update/leave wire events
@@ -135,6 +164,10 @@ class ScenePublisher:
             detections = self.detector(frame.image)
             now = time.monotonic()
             self.registry.consume(detections, ts=now)
+
+            # Evaluate triggers -> Events on the bus (cat audio reacts via subscription).
+            frame_area = float(frame.image.shape[0] * frame.image.shape[1])
+            self.triggers.update(self.registry, now, frame_area)
 
             events = self._compute_events(ts_ms=frame.ts_ms, frame_shape=frame.image.shape)
             for ev in events:
@@ -200,10 +233,11 @@ class ScenePublisher:
 def build_scene_source(
     canvas_size: tuple[int, int],
     server: Server,
-    webcam_a: Optional[str],
-    webcam_b: Optional[str],
-    yolo_weights: Optional[str],
+    webcam_a: str | None,
+    webcam_b: str | None,
+    yolo_weights: str | None,
     target_hz: int = 15,
+    enable_cat_audio: bool = True,
 ) -> ScenePublisher:
     """CLI bridge — same yi-hack-v5 URL defaults as the gloves source."""
     url_a = webcam_a or yi_rtsp_url(host="10.0.0.33", low_res=True)
@@ -215,4 +249,5 @@ def build_scene_source(
         camera_url_b=url_b,
         yolo_weights_path=yolo_weights,
         target_hz=target_hz,
+        enable_cat_audio=enable_cat_audio,
     )
