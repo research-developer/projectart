@@ -44,6 +44,33 @@ docs/superpowers/specs/    Design spec(s)
 research-notes/        Original three research PRDs (synthesized in PRD.md)
 ```
 
+## Floor games (whack-a-mole)
+
+Project a game onto the floor and play with an ArUco-marked mallet/foot tag.
+
+```bash
+python -m projectart --input floor --game whack \
+    --camera-index 0 --http-port 8011 --ws-port 8766
+# open on the projector display:
+#   http://127.0.0.1:8011/floor.html?ws=ws://127.0.0.1:8766/
+```
+
+**First-time setup**
+
+- **Camera permission**: grant your terminal Camera access (System Settings → Privacy &
+  Security → Camera). The capture thread can't raise the prompt itself.
+- **Continuity Camera**: turn **OFF** Center Stage / video effects — per-frame reframing
+  breaks the camera→stage calibration. Use a short shutter + good light.
+- **Markers**: print an ArUco tag from the `DICT_4X4_50` dictionary for the mallet/foot.
+
+**Calibration** (in the browser, projected on the floor)
+
+- Press **`c`** and drag the 4 green corners until the projected stage is a clean
+  rectangle on the floor (saved automatically).
+- Press **`1`–`4`** while holding the marker on a block at playing height on each
+  projected corner (TL, TR, BR, BL) to set camera→stage. Persists to
+  `~/.projectart/calib.json`.
+
 ## Status
 
 - M0 ✅ scaffold + ws/http server + black p5.js canvas

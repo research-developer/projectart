@@ -11,11 +11,17 @@ shutter with enough light to avoid motion blur on fast swings.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from queue import Empty, Queue
 
 from .yi_rtsp import Frame  # reuse the (image, ts_ms) dataclass
+
+# AVFoundation can't present its permission prompt from our capture thread; skip
+# the in-thread auth request and rely on a pre-granted Camera permission
+# (System Settings > Privacy & Security > Camera). Set before cv2 opens a device.
+os.environ.setdefault("OPENCV_AVFOUNDATION_SKIP_AUTH", "1")
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +78,12 @@ class LocalCamera:
         except Exception:
             pass
         if not cap.isOpened():
-            log.error("[%s] could not open camera index %d", self.name, self.index)
+            log.error(
+                "[%s] could not open camera index %d — grant Camera permission to your "
+                "terminal (System Settings > Privacy & Security > Camera) and ensure the "
+                "iPhone/Continuity Camera is active.",
+                self.name, self.index,
+            )
             cap.release()
             return
         log.info("[%s] local camera open (index=%d)", self.name, self.index)
