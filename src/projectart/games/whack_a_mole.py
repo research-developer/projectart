@@ -93,13 +93,17 @@ class WhackGame:
             self.phase = "over"
 
         if self.phase == "playing":
+            step = max(self.cfg.spawn_interval_s, 1e-3)
             while ts >= self._next_spawn:
                 self._spawn(ts)
-                self._next_spawn += self.cfg.spawn_interval_s
+                self._next_spawn += step
 
-        for mid in [m for m, mo in self.moles.items() if ts >= mo.expires_at]:
-            del self.moles[mid]
+        # prune stale marker history (markers absent this frame)
+        present = {mid for mid, _, _ in markers}
+        for mid in [m for m in self._last_marker if m not in present]:
+            del self._last_marker[mid]
 
+        # hits FIRST (so a hit at ts == expires_at still counts)
         for marker_id, x, y in markers:
             ax, ay = self._last_marker.get(marker_id, (x, y))
             self._last_marker[marker_id] = (x, y)
@@ -108,6 +112,10 @@ class WhackGame:
                 if seg_point_dist(ax, ay, x, y, mo.x, mo.y) <= self.cfg.hit_radius:
                     self.score += self.cfg.points
                     del self.moles[mid]  # debounce: a mole scores once
+
+        # expire AFTER hits
+        for mid in [m for m, mo in self.moles.items() if ts >= mo.expires_at]:
+            del self.moles[mid]
 
         return list(self.moles.values())
 

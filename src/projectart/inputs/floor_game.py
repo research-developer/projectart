@@ -25,7 +25,7 @@ def coast_markers(
     """Carry markers through short dropouts. `state` is caller-owned and holds
     per-id (x, y, vx, vy, ts, seen_ts). Detected markers update velocity; missing
     ones are extrapolated until `max_coast_s` since last real detection, then dropped.
-    Returns list of (id, stage_x, stage_y)."""
+    Returns list of (id, x, y) in the same coordinate space as `detected`."""
     out: list[tuple[int, float, float]] = []
     seen_ids: set[int] = set()
     for mid, x, y in detected:

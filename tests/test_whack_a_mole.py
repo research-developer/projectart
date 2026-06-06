@@ -71,3 +71,22 @@ def test_seg_point_dist_endpoint_and_middle():
     assert seg_point_dist(0, 0, 10, 0, 5, 0) == 0.0
     assert seg_point_dist(0, 0, 10, 0, 5, 3) == 3.0
     assert seg_point_dist(0, 0, 0, 0, 3, 4) == 5.0  # degenerate segment = point
+
+
+def test_hit_at_expiry_boundary_scores():
+    g = WhackGame(_cfg(mole_lifetime_s=1.0, spawn_interval_s=100.0))
+    g.tick([], ts=0.0)
+    mole = next(iter(g.moles.values()))
+    g.tick([(1, mole.x, mole.y)], ts=1.0)   # exactly at expiry: hit runs before expire
+    assert g.score == 1
+
+
+def test_reappear_after_gap_does_not_phantom_score():
+    g = WhackGame(_cfg(spawn_interval_s=100.0, hit_radius=0.05))
+    g.tick([], ts=0.0)
+    mole = next(iter(g.moles.values()))
+    g.tick([(1, 0.0, mole.y)], ts=0.1)       # left edge, same row as mole
+    assert g.score == 0
+    g.tick([], ts=0.2)                         # marker absent -> prune last position
+    g.tick([(1, 1.0, mole.y)], ts=0.3)        # right edge: fresh point, no stale sweep
+    assert g.score == 0

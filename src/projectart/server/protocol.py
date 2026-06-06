@@ -1,7 +1,7 @@
 """Wire protocol between the Python backend and the browser renderer.
 
 Messages are JSON. Every message has a `type` field. Future schema changes go
-through `version` (current = 2).
+through `version` (current = 3).
 """
 from __future__ import annotations
 
