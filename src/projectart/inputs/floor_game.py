@@ -8,8 +8,14 @@ import asyncio
 import logging
 import time
 
+from ..calibration.persist import (
+    CalibrationDoc,
+    doc_with_stage,
+    load_calibration,
+    save_calibration,
+)
 from ..games.whack_a_mole import WhackGame
-from ..geometry.stage import StageCalibration
+from ..geometry.stage import STAGE_CORNERS, StageCalibration, _homography
 from ..server.protocol import GameState, SceneFrame, SceneObject
 from ..server.ws import Server
 
@@ -70,10 +76,52 @@ class FloorGameSource:
         self._coast: dict = {}
         self._capture = None
         self._detector = None
+        self._pending_input_corner: int | None = None
+        self._input_cam_corners: list[tuple[float, float] | None] = [None, None, None, None]
 
     @classmethod
     def for_testing(cls, calib: StageCalibration, game: WhackGame) -> FloorGameSource:
         return cls(server=None, calib=calib, game=game)
+
+    # ---- calibration (driven by the renderer over the WS inbound channel) ----
+
+    def _persist_calib(self) -> None:
+        doc = load_calibration() or CalibrationDoc()
+        save_calibration(doc_with_stage(doc, self.calib))
+
+    def _on_calib_message(self, msg: dict) -> None:
+        """Handle calibration commands from the renderer."""
+        mtype = msg.get("type")
+        if mtype == "calib_output":
+            # 4 projector px (stage order TL,TR,BR,BL) the user dragged the stage to.
+            try:
+                self.calib.stage_to_projector = _homography(STAGE_CORNERS, msg["corners"])
+                self._persist_calib()
+                log.info("output calibration updated + saved")
+            except Exception:
+                log.exception("bad calib_output message")
+        elif mtype == "calib_input_capture":
+            self._pending_input_corner = int(msg.get("corner", 0))
+            log.info("will capture next marker for stage corner %d", self._pending_input_corner)
+
+    def _maybe_capture_input_corner(self, detected: list[tuple[int, float, float]]) -> None:
+        """If the renderer requested an input-corner capture, record the next marker's
+        camera px for that corner; once all 4 are set, rebuild camera->stage (the marker
+        is placed at PLAYING HEIGHT on each projected corner — see the spec)."""
+        if self._pending_input_corner is None or not detected:
+            return
+        i = self._pending_input_corner
+        self._input_cam_corners[i] = (detected[0][1], detected[0][2])
+        self._pending_input_corner = None
+        log.info("captured camera corner %d at %s", i, self._input_cam_corners[i])
+        if all(c is not None for c in self._input_cam_corners):
+            proj_corners = [self.calib.stage_to_proj_px(sx, sy) for sx, sy in STAGE_CORNERS]
+            self.calib = StageCalibration.from_corners(
+                self._input_cam_corners, STAGE_CORNERS, proj_corners,
+                height_offset=self.calib.height_offset,
+            )
+            self._persist_calib()
+            log.info("input calibration (camera->stage) updated + saved")
 
     def step(
         self, markers_px: list[tuple[int, float, float]], ts: float
@@ -112,6 +160,11 @@ class FloorGameSource:
         assert self.server is not None
         self._capture = LocalCamera(index=self.camera_index, name="local")
         self._detector = ArucoDetector()
+
+        async def _ws_handler(_ws, msg):
+            self._on_calib_message(msg)
+
+        self.server.set_message_handler(_ws_handler)
         self._capture.start()
         log.info(
             "floor game starting (camera_index=%d, target_hz=%d)",
@@ -129,6 +182,7 @@ class FloorGameSource:
                 self.frame_h, self.frame_w = frame.image.shape[:2]
                 ts = time.monotonic() - loop_t0
                 detected = [(m.id, m.cx, m.cy) for m in self._detector(frame.image)]
+                self._maybe_capture_input_corner(detected)
                 # coast in CAMERA px then map to stage in step()
                 coasted = coast_markers(self._coast, detected, ts)
                 scene, gs = self.step(coasted, ts)
