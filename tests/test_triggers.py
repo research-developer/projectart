@@ -130,6 +130,30 @@ def test_intersect_then_separate():
 
 # ---- TriggerEngine + bus -----
 
+def test_recognize_fires_once_when_name_set():
+    from projectart.tracking.triggers import RecognizeTrigger
+    reg = _reg()
+    trig = RecognizeTrigger("person")
+    reg.consume([_person()], ts=0.0)
+    assert trig.update(reg, 0.0) == []  # confirmed but no name yet
+    ent = next(e for e in reg if e.class_name == "person")
+    ent.attrs["name"] = "Samaya"
+    evs = trig.update(reg, 0.1)
+    assert len(evs) == 1 and evs[0].kind == "recognize" and evs[0].name == "Samaya"
+    assert trig.update(reg, 0.2) == []  # not announced again
+
+
+def test_intersect_carries_person_name():
+    reg = _reg()
+    trig = IntersectTrigger("person", "cat", min_overlap=0.4)
+    reg.consume([_pid(1, 100, 100, 200, 200), _cid(2, 100, 100, 40, 40)], ts=0.0)
+    for e in reg:
+        if e.class_name == "person":
+            e.attrs["name"] = "Samaya"
+    evs = trig.update(reg, 0.0)
+    assert evs[0].kind == "intersect" and evs[0].name == "Samaya"
+
+
 def test_engine_emits_events_on_bus():
     bus = BehaviorBus()
     got = []

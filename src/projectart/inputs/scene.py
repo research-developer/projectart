@@ -24,6 +24,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 
 from ..audio.cat_audio import CatAudioConfig, CatAudioPlayer
 from ..capture.yi_rtsp import YiCapture, yi_rtsp_url
@@ -37,6 +38,7 @@ from ..tracking.triggers import (
     AppearTrigger,
     DisappearTrigger,
     IntersectTrigger,
+    RecognizeTrigger,
     TriggerEngine,
 )
 
@@ -57,6 +59,21 @@ def _identity_canvas_mapper(canvas_size: tuple[int, int]):
         return (cx - bw / 2) * sx, (cy - bh / 2) * sy, bw * sx, bh * sy
 
     return to_canvas
+
+
+def _assign_face_names(registry, results) -> None:
+    """Set ``entity.attrs['name']`` on the person whose box contains each recognized
+    face's centre. `results` = [((x, y, w, h), name, score), ...]."""
+    persons = [e for e in registry if e.class_name == "person"]
+    for (fx, fy, fw, fh), name, _score in results:
+        if not name:
+            continue
+        cx, cy = fx + fw / 2, fy + fh / 2
+        for e in persons:
+            b = e.last_bbox
+            if b.x1 <= cx <= b.x2 and b.y1 <= cy <= b.y2:
+                e.attrs["name"] = name
+                break
 
 
 class ScenePublisher:
@@ -81,6 +98,9 @@ class ScenePublisher:
         gone_after_s: float = 2.5,
         near_area_frac: float = 0.18,
         intersect_overlap: float = 0.4,
+        enable_face_recognition: bool = True,
+        face_gallery_path: str | None = None,
+        recognize_every_s: float = 0.5,
     ):
         self.canvas_size = canvas_size
         self.server = server
@@ -108,6 +128,7 @@ class ScenePublisher:
                 AppearTrigger("cat", near_area_frac=near_area_frac),
                 DisappearTrigger("cat"),
                 IntersectTrigger("person", "cat", min_overlap=intersect_overlap),
+                RecognizeTrigger("person"),
             ],
             bus=self.bus,
         )
@@ -115,6 +136,26 @@ class ScenePublisher:
         if enable_cat_audio:
             self.cat_audio = CatAudioPlayer(CatAudioConfig(device=audio_device))
             self.cat_audio.subscribe(self.bus)
+
+        # Face recognition (optional): names person entities -> RecognizeTrigger /
+        # name-aware intersect. Off if no gallery exists.
+        self._face_rec = None
+        self._gallery = None
+        self._recognize_every_s = recognize_every_s
+        self._last_recognize = 0.0
+        if enable_face_recognition:
+            gp = (Path(face_gallery_path).expanduser() if face_gallery_path
+                  else Path("~/.projectart/faces/gallery.npz").expanduser())
+            if gp.exists():
+                try:
+                    from ..detection.faces import FaceGallery, FaceRecognizer
+                    self._gallery = FaceGallery.load(gp)
+                    self._face_rec = FaceRecognizer()
+                    log.info("face recognition on (%d enrolled)", len(self._gallery.names()))
+                except Exception:
+                    log.exception("face recognition disabled (load failed)")
+            else:
+                log.info("no face gallery at %s; face recognition off", gp)
 
         self._to_canvas = _identity_canvas_mapper(canvas_size)
         # delta-diff state for emitting enter/update/leave wire events
@@ -165,6 +206,17 @@ class ScenePublisher:
             detections = self.detector(frame.image)
             now = time.monotonic()
             self.registry.consume(detections, ts=now)
+
+            # Throttled face recognition -> name person entities (before triggers,
+            # so RecognizeTrigger / named intersect see fresh names).
+            recog_due = (now - self._last_recognize) >= self._recognize_every_s
+            if self._face_rec is not None and recog_due:
+                self._last_recognize = now
+                try:
+                    _assign_face_names(
+                        self.registry, self._face_rec.identify(frame.image, self._gallery))
+                except Exception:
+                    log.exception("face recognition step failed")
 
             # Evaluate triggers -> Events on the bus (cat audio reacts via subscription).
             frame_area = float(frame.image.shape[0] * frame.image.shape[1])
@@ -240,6 +292,7 @@ def build_scene_source(
     target_hz: int = 15,
     enable_cat_audio: bool = True,
     audio_device: str | None = None,
+    enable_face_recognition: bool = True,
 ) -> ScenePublisher:
     """CLI bridge — same yi-hack-v5 URL defaults as the gloves source."""
     url_a = webcam_a or yi_rtsp_url(host="10.0.0.33", low_res=True)
@@ -253,4 +306,5 @@ def build_scene_source(
         target_hz=target_hz,
         enable_cat_audio=enable_cat_audio,
         audio_device=audio_device,
+        enable_face_recognition=enable_face_recognition,
     )

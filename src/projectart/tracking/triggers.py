@@ -32,6 +32,7 @@ class Event:
     other_class: str | None = None     # the second class for intersect/separate
     other_track_id: int | None = None
     overlap: float = 0.0               # containment ratio for intersect/separate
+    name: str | None = None            # recognized identity (recognize / named intersect)
     ts: float = 0.0
 
 
@@ -107,23 +108,50 @@ class IntersectTrigger:
         self._pairs: set[tuple[int, int]] = set()
 
     def update(self, registry, ts: float, frame_area: float = 0.0) -> list[Event]:
-        a_ents = [e for e in registry.confirmed() if e.class_name == self.class_a]
-        b_ents = [e for e in registry.confirmed() if e.class_name == self.class_b]
+        a_ents = {e.track_id: e for e in registry.confirmed() if e.class_name == self.class_a}
+        b_ents = {e.track_id: e for e in registry.confirmed() if e.class_name == self.class_b}
         current: dict[tuple[int, int], float] = {}
-        for a in a_ents:
-            for b in b_ents:
+        for aid, a in a_ents.items():
+            for bid, b in b_ents.items():
                 ov = containment(a.last_bbox, b.last_bbox)
                 if ov >= self.min_overlap:
-                    current[(a.track_id, b.track_id)] = ov
+                    current[(aid, bid)] = ov
         events: list[Event] = []
         for pair in sorted(current.keys() - self._pairs):
+            a = a_ents.get(pair[0])
+            name = a.attrs.get("name") if a is not None else None
             events.append(Event(kind="intersect", class_name=self.class_a, track_id=pair[0],
                                 other_class=self.class_b, other_track_id=pair[1],
-                                overlap=current[pair], ts=ts))
+                                overlap=current[pair], name=name, ts=ts))
         for pair in sorted(self._pairs - current.keys()):
             events.append(Event(kind="separate", class_name=self.class_a, track_id=pair[0],
                                 other_class=self.class_b, other_track_id=pair[1], ts=ts))
         self._pairs = set(current.keys())
+        return events
+
+
+class RecognizeTrigger:
+    """Fires `recognize` once when a confirmed entity of `class_name` first carries
+    a name (set externally, e.g. by face recognition into ``entity.attrs['name']``)."""
+
+    def __init__(self, class_name: str = "person"):
+        self.class_name = class_name
+        self._announced: dict[int, str] = {}  # track_id -> announced name
+
+    def update(self, registry, ts: float, frame_area: float = 0.0) -> list[Event]:
+        events: list[Event] = []
+        present: set[int] = set()
+        for e in registry.confirmed():
+            if e.class_name != self.class_name:
+                continue
+            present.add(e.track_id)
+            name = e.attrs.get("name")
+            if name and self._announced.get(e.track_id) != name:
+                self._announced[e.track_id] = name
+                events.append(Event(kind="recognize", class_name=self.class_name,
+                                    track_id=e.track_id, name=name, ts=ts))
+        for tid in [t for t in self._announced if t not in present]:
+            del self._announced[tid]
         return events
 
 
