@@ -84,6 +84,18 @@ def test_missing_clip_returns_none(tmp_path):
     assert played == []
 
 
+def test_situations_for_freeze(tmp_path):
+    p, _ = _player(tmp_path)
+    # freeze start
+    assert p.situations_for(Event("freeze", "person", 0)) == ["freeze_start"]
+    # freeze result with a caught player
+    assert p.situations_for(Event("freeze_result", "person", 0, name="Samaya")) == [
+        "freeze_caught_samaya", "freeze_caught"
+    ]
+    # freeze result — nobody moved
+    assert p.situations_for(Event("freeze_result", "person", 0)) == ["freeze_clear"]
+
+
 def test_unknown_device_falls_back_to_afplay(tmp_path, monkeypatch):
     from projectart.audio import cat_audio, devices
     monkeypatch.setattr(devices, "list_output_devices", lambda: [])  # find_device -> None
