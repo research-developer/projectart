@@ -22,7 +22,6 @@ import threading
 import time
 from dataclasses import dataclass
 from queue import Empty, Queue
-from typing import Optional
 
 import numpy as np
 
@@ -65,7 +64,7 @@ class YiCapture:
         self.reconnect_delay_s = reconnect_delay_s
         self._q: Queue[Frame] = Queue(maxsize=1)
         self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
@@ -80,7 +79,7 @@ class YiCapture:
             self._thread.join(timeout=1.0)
             self._thread = None
 
-    def latest(self, timeout_s: float = 0.0) -> Optional[Frame]:
+    def latest(self, timeout_s: float = 0.0) -> Frame | None:
         if timeout_s <= 0.0:
             try:
                 return self._q.get_nowait()
@@ -116,7 +115,8 @@ class YiCapture:
                 pass
 
             if not cap.isOpened():
-                log.warning("[%s] failed to open %s; retry in %.1fs", self.name, self.url, self.reconnect_delay_s)
+                log.warning("[%s] failed to open %s; retry in %.1fs",
+                            self.name, self.url, self.reconnect_delay_s)
                 cap.release()
                 if self._stop.wait(self.reconnect_delay_s):
                     return

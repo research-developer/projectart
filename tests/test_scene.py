@@ -6,7 +6,6 @@ from __future__ import annotations
 from projectart.detection.yolo_dots import Detection
 from projectart.inputs.scene import ScenePublisher
 from projectart.server.ws import Server
-from projectart.tracking.builtins import Cat, Person
 
 
 def _det(class_id, name, cx=200.0, cy=200.0, w=40.0, h=40.0, conf=0.9):

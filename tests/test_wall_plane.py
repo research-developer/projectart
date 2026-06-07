@@ -13,7 +13,6 @@ from projectart.geometry.wall_plane import (
     signed_distance_to_plane,
 )
 
-
 # A reference plane: z = 1 (i.e. normal (0,0,1), centroid (0,0,1))
 PLANE_Z1 = Plane(normal=np.array([0.0, 0.0, 1.0]), centroid=np.array([0.0, 0.0, 1.0]))
 

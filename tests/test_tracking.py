@@ -2,12 +2,10 @@
 registry routing, behavior bus, IoU association."""
 from __future__ import annotations
 
-import time
-
 import pytest
 
 from projectart.detection.yolo_dots import Detection
-from projectart.tracking import EntityState, TrackedEntity, TrackedRegistry
+from projectart.tracking import EntityState, TrackedRegistry
 from projectart.tracking.builtins import Cat, GenericEntity, Person, attach_callbacks
 from projectart.tracking.entity import BBox
 from projectart.tracking.events import BehaviorBus

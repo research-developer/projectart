@@ -12,8 +12,8 @@ OpenCV (the dataclasses and matchers are cv2-free).
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Iterable
 
 import numpy as np
 

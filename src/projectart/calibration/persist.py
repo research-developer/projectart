@@ -12,9 +12,9 @@ from __future__ import annotations
 import json
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from ..geometry.stage import StageCalibration
@@ -25,7 +25,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 log = logging.getLogger(__name__)
 
 CALIB_VERSION = 1
-DEFAULT_CALIB_PATH = Path(os.environ.get("PROJECTART_CALIB", "~/.projectart/calib.json")).expanduser()
+DEFAULT_CALIB_PATH = Path(
+    os.environ.get("PROJECTART_CALIB", "~/.projectart/calib.json")
+).expanduser()
 
 
 def _matrix_validator(rows: int, cols: int):
@@ -97,20 +99,20 @@ class CalibrationDoc(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: int = CALIB_VERSION
-    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
     canvas: CanvasSize = Field(default_factory=CanvasSize)
     contact_epsilon_m: float = 0.015
 
-    camera_a: Optional[CameraIntrinsics] = None
-    camera_b: Optional[CameraIntrinsics] = None
-    stereo: Optional[StereoExtrinsics] = None
-    wall_plane: Optional[WallPlaneSchema] = None
-    uv_basis: Optional[UvBasisSchema] = None
+    camera_a: CameraIntrinsics | None = None
+    camera_b: CameraIntrinsics | None = None
+    stereo: StereoExtrinsics | None = None
+    wall_plane: WallPlaneSchema | None = None
+    uv_basis: UvBasisSchema | None = None
     stage: StageSchema | None = None
 
     # Homographies are 3x3 lists of lists. None when not yet calibrated.
-    homography_uv_to_canvas: Optional[list[list[float]]] = None
-    homography_cam_a_to_canvas: Optional[list[list[float]]] = None  # M2 4-corner shortcut
+    homography_uv_to_canvas: list[list[float]] | None = None
+    homography_cam_a_to_canvas: list[list[float]] | None = None  # M2 4-corner shortcut
 
 
 def save_calibration(doc: CalibrationDoc, path: Path | None = None) -> Path:

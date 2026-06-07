@@ -12,9 +12,9 @@ layers subscribe and react. Keeps tracking testable in isolation.
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
-from .entity import Detection, EntityState, TrackedEntity
+from .entity import Detection, TrackedEntity
 from .events import BehaviorBus
 
 log = logging.getLogger(__name__)

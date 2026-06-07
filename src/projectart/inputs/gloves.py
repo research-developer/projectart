@@ -28,7 +28,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Optional
 
 import numpy as np
 
@@ -40,7 +39,6 @@ from ..geometry.filter_one_euro import OneEuroFilter
 from ..geometry.wall_plane import (
     Plane,
     PlaneBasis,
-    is_in_contact,
     project_to_uv,
     signed_distance_to_plane,
 )
@@ -55,14 +53,16 @@ def _identity_mapper(canvas_size: tuple[int, int]):
     detections to canvas size. Wrong, but visible — useful in dev."""
     cw, ch = canvas_size
 
-    def map_xy(cam_x: float, cam_y: float, frame_shape: tuple[int, int, int]) -> tuple[float, float]:
+    def map_xy(
+        cam_x: float, cam_y: float, frame_shape: tuple[int, int, int]
+    ) -> tuple[float, float]:
         h, w = frame_shape[:2]
         return (cam_x / max(1, w)) * cw, (cam_y / max(1, h)) * ch
 
     return map_xy
 
 
-def _pick_primary_dot(detections: list[Detection]) -> Optional[Detection]:
+def _pick_primary_dot(detections: list[Detection]) -> Detection | None:
     """Highest-confidence detection. Once we have per-finger classes, this
     should prefer index-tip; for now confidence is fine."""
     if not detections:
@@ -112,9 +112,9 @@ class GlovesSource:
         canvas_size: tuple[int, int],
         server: Server,
         camera_url_a: str,
-        camera_url_b: Optional[str] = None,
-        yolo_weights_path: Optional[str] = None,
-        calibration: Optional[CalibrationDoc] = None,
+        camera_url_b: str | None = None,
+        yolo_weights_path: str | None = None,
+        calibration: CalibrationDoc | None = None,
         target_hz: int = 30,
     ):
         self.canvas_size = canvas_size
@@ -177,7 +177,7 @@ class GlovesSource:
 
     async def _loop(self) -> None:
         loop_t0 = time.monotonic()
-        last_pos: Optional[tuple[float, float]] = None
+        last_pos: tuple[float, float] | None = None
         while True:
             t_iter_start = time.monotonic()
             frame_a = self.capture_a.latest()
@@ -215,8 +215,8 @@ class GlovesSource:
         detections_a: list[Detection],
         now_s: float,
         ts_ms: int,
-        last_pos: Optional[tuple[float, float]],
-    ) -> tuple[Optional[PointerEvent], Optional[HudAnchorEvent]]:
+        last_pos: tuple[float, float] | None,
+    ) -> tuple[PointerEvent | None, HudAnchorEvent | None]:
         primary = _pick_primary_dot(detections_a)
         if primary is None:
             if last_pos is not None:
@@ -255,7 +255,7 @@ class GlovesSource:
         detections_a: list[Detection],
         now_s: float,
         ts_ms: int,
-    ) -> tuple[Optional[PointerEvent], Optional[HudAnchorEvent]]:
+    ) -> tuple[PointerEvent | None, HudAnchorEvent | None]:
         assert self.capture_b is not None
         assert self.detector_b is not None
         assert self._rig is not None
@@ -314,7 +314,7 @@ class GlovesSource:
         frame_shape,
         now_s: float,
         ts_ms: int,
-    ) -> Optional[HudAnchorEvent]:
+    ) -> HudAnchorEvent | None:
         if not detections:
             return None
         anchor_x = float(np.median([d.cx for d in detections]))
@@ -352,10 +352,10 @@ class GlovesSource:
 def build_gloves_source(
     canvas_size: tuple[int, int],
     server: Server,
-    webcam_a: Optional[str],
-    webcam_b: Optional[str],
-    yolo_weights: Optional[str],
-    calibration: Optional[CalibrationDoc] = None,
+    webcam_a: str | None,
+    webcam_b: str | None,
+    yolo_weights: str | None,
+    calibration: CalibrationDoc | None = None,
 ) -> GlovesSource:
     """CLI bridge — fills in the standard yi-hack-v5 URLs for the two
     in-house cameras when not overridden, and tries to load calibration
