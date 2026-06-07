@@ -143,6 +143,24 @@ def test_recognize_fires_once_when_name_set():
     assert trig.update(reg, 0.2) == []  # not announced again
 
 
+def test_recognize_refires_after_gone():
+    """A named person going GONE is pruned from the trigger's memory, so a fresh
+    track for the same person re-fires `recognize` (re-entry should re-announce)."""
+    from projectart.tracking.triggers import RecognizeTrigger
+    reg = _reg()
+    trig = RecognizeTrigger("person")
+    reg.consume([_person()], ts=0.0)
+    next(e for e in reg if e.class_name == "person").attrs["name"] = "Samaya"
+    assert len(trig.update(reg, 0.1)) == 1
+    # person gone: advance past GONE_AFTER_S (2.0s) so the registry drops the track
+    reg.consume([], ts=3.0)
+    assert trig.update(reg, 3.0) == []
+    # a fresh person (new track id) re-named -> recognize fires again
+    reg.consume([_person()], ts=3.1)
+    next(e for e in reg if e.class_name == "person").attrs["name"] = "Samaya"
+    assert len(trig.update(reg, 3.2)) == 1
+
+
 def test_intersect_carries_person_name():
     reg = _reg()
     trig = IntersectTrigger("person", "cat", min_overlap=0.4)

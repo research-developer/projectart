@@ -18,7 +18,7 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-_REPO_MODELS = Path(__file__).resolve().parents[2] / "models"
+_REPO_MODELS = Path(__file__).resolve().parents[3] / "models"  # repo-root models/ (gitignored)
 YUNET = "face_detection_yunet_2023mar.onnx"
 SFACE = "face_recognition_sface_2021dec.onnx"
 _ZOO = "https://github.com/opencv/opencv_zoo/raw/main/models"
@@ -39,7 +39,13 @@ def ensure_models(models_dir: Path | None = None) -> tuple[Path, Path]:
         p = d / name
         if not p.exists() or p.stat().st_size < 1000:
             log.info("downloading face model %s", name)
-            urllib.request.urlretrieve(url, p)
+            try:
+                urllib.request.urlretrieve(url, p)
+                if p.stat().st_size < 1000:  # tiny body = HTML error page, not a model
+                    raise RuntimeError(f"downloaded face model looks invalid: {name}")
+            except Exception:
+                p.unlink(missing_ok=True)  # never cache a partial/bad download
+                raise
         paths[name] = p
     return paths[YUNET], paths[SFACE]
 

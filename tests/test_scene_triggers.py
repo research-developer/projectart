@@ -15,9 +15,11 @@ def _det(cid, name, cx=300.0, cy=300.0, w=80.0, h=80.0):
 def _scene():
     server = Server(ws_host="127.0.0.1", ws_port=0, http_port=0,
                     static_dir=Path("."), canvas_size=(1920, 1080))
-    # audio off so the test is hermetic (no afplay / no ~/.projectart dependency)
+    # audio + face recognition off so the test is hermetic (no afplay, no model
+    # download, no ~/.projectart gallery dependency)
     return ScenePublisher(canvas_size=(1920, 1080), server=server,
-                          camera_url_a="x", enable_cat_audio=False)
+                          camera_url_a="x", enable_cat_audio=False,
+                          enable_face_recognition=False)
 
 
 def test_scene_emits_cat_appear_event_on_bus():
@@ -43,3 +45,22 @@ def test_scene_emits_person_cat_intersect_event_on_bus():
         )
         sp.triggers.update(sp.registry, ts, 640 * 360)
     assert any(e.kind == "intersect" for e in got)
+
+
+def test_scene_face_name_fires_recognize_event_on_bus():
+    """End-to-end: _assign_face_names tags the matching person entity, and the
+    RecognizeTrigger wired into the publisher then fires a `recognize` event."""
+    from projectart.inputs.scene import _assign_face_names
+
+    sp = _scene()
+    got = []
+    sp.bus.on("event.recognize", lambda *, event: got.append(event))
+    # person appears and is confirmed (no name yet -> no recognize)
+    for ts in (0.0, 0.1):
+        sp.registry.consume([_det(0, "person", cx=300, cy=300, w=200, h=200)], ts=ts)
+        sp.triggers.update(sp.registry, ts, 640 * 360)
+    assert not got
+    # a recognized face whose centre (300, 300) lands inside the person box (200..400)
+    _assign_face_names(sp.registry, [((290, 290, 20, 20), "Samaya", 0.5)])
+    sp.triggers.update(sp.registry, 0.2, 640 * 360)
+    assert any(e.kind == "recognize" and e.name == "Samaya" for e in got)

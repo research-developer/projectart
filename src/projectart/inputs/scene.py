@@ -64,7 +64,7 @@ def _identity_canvas_mapper(canvas_size: tuple[int, int]):
 def _assign_face_names(registry, results) -> None:
     """Set ``entity.attrs['name']`` on the person whose box contains each recognized
     face's centre. `results` = [((x, y, w, h), name, score), ...]."""
-    persons = [e for e in registry if e.class_name == "person"]
+    persons = [e for e in registry.confirmed() if e.class_name == "person"]
     for (fx, fy, fw, fh), name, _score in results:
         if not name:
             continue

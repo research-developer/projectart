@@ -114,7 +114,8 @@ class CatAudioPlayer:
             if clip is not None:
                 break
         if clip is None:
-            log.debug("no clip for %r in %s", candidates, self.cfg.audio_dir)
+            log.info("no audio clip for %r in %s (did you run the gen_*_audio.py tools?)",
+                     candidates, self.cfg.audio_dir)
             return None
         self._last[key] = ev.ts
         try:

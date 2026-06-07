@@ -92,7 +92,7 @@ class DisappearTrigger:
     def update(self, registry, ts: float, frame_area: float = 0.0) -> list[Event]:
         present = {e.track_id for e in registry.confirmed() if e.class_name == self.class_name}
         gone = self._known - present
-        self._known = present | (self._known & present)
+        self._known = present
         return [Event(kind="disappear", class_name=self.class_name, track_id=tid, ts=ts)
                 for tid in sorted(gone)]
 
