@@ -37,6 +37,7 @@ from ..tracking.events import BehaviorBus
 from ..tracking.triggers import (
     AppearTrigger,
     DisappearTrigger,
+    FarewellTrigger,
     IntersectTrigger,
     RecognizeTrigger,
     TriggerEngine,
@@ -95,12 +96,13 @@ class ScenePublisher:
         enable_cat_audio: bool = True,
         audio_device: str | None = None,
         confirm_after_hits: int = 2,
-        gone_after_s: float = 2.5,
+        gone_after_s: float = 3.0,
         near_area_frac: float = 0.18,
         intersect_overlap: float = 0.4,
         enable_face_recognition: bool = True,
         face_gallery_path: str | None = None,
         recognize_every_s: float = 0.5,
+        greet_after_s: float = 1.5,
     ):
         self.canvas_size = canvas_size
         self.server = server
@@ -122,13 +124,17 @@ class ScenePublisher:
             confirm_after_hits=confirm_after_hits,
             gone_after_s=gone_after_s,
         )
-        # Triggers -> Events on the bus (appear/disappear cat, person∩cat intersect).
+        # Triggers -> Events on the bus. People are greeted only after they've
+        # been tracked as a stable object for `greet_after_s` (no premature
+        # greeting), and bid farewell once they've been gone past the registry's
+        # `gone_after_s` threshold ("greeted first, then goodbye").
         self.triggers = TriggerEngine(
             [
                 AppearTrigger("cat", near_area_frac=near_area_frac),
                 DisappearTrigger("cat"),
                 IntersectTrigger("person", "cat", min_overlap=intersect_overlap),
-                RecognizeTrigger("person"),
+                RecognizeTrigger("person", greet_after_s=greet_after_s),
+                FarewellTrigger("person", greet_after_s=greet_after_s),
             ],
             bus=self.bus,
         )

@@ -35,12 +35,21 @@ def test_situations_for_disappear_intersect_and_none(tmp_path):
 
 def test_situations_for_recognize_and_named_intersect(tmp_path):
     p, _ = _player(tmp_path)
-    assert p.situations_for(Event("recognize", "person", 1, name="Samaya")) == ["greet_samaya"]
+    assert p.situations_for(Event("recognize", "person", 1, name="Samaya")) == [
+        "greet_samaya", "greet"]
     cands = p.situations_for(
         Event("intersect", "person", 1, other_class="cat", other_track_id=2, name="Preston Temple")
     )
     assert cands[0].endswith("_preston_temple")
     assert cands[1] in ("intersect_look", "intersect_benice")
+
+
+def test_situations_for_farewell(tmp_path):
+    p, _ = _player(tmp_path)
+    assert p.situations_for(Event("farewell", "person", 1, name="Samaya")) == [
+        "farewell_samaya", "farewell"]
+    # no name -> nothing to say
+    assert p.situations_for(Event("farewell", "person", 1)) == []
 
 
 def test_clip_for(tmp_path):

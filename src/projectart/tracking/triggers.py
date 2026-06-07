@@ -4,6 +4,8 @@ A `Trigger` watches the registry each frame and emits `Event`s on transitions:
   * `AppearTrigger`   — a confirmed entity of a class shows up (with far/near size).
   * `DisappearTrigger`— a previously-seen entity of a class is gone.
   * `IntersectTrigger`— two classes' boxes start/stop "mostly" overlapping.
+  * `RecognizeTrigger`— a tracked entity is identified by name (greet, with dwell).
+  * `FarewellTrigger` — a greeted entity disappears past the gone threshold (goodbye).
 
 Tolerance is parameterized and generous by default: appearance/disappearance ride
 the registry's own confirm/coast hysteresis (so brief flicker doesn't fire), and
@@ -131,11 +133,17 @@ class IntersectTrigger:
 
 
 class RecognizeTrigger:
-    """Fires `recognize` once when a confirmed entity of `class_name` first carries
-    a name (set externally, e.g. by face recognition into ``entity.attrs['name']``)."""
+    """Fires `recognize` once when a confirmed entity of `class_name` carries a
+    name (set externally, e.g. by face recognition into ``entity.attrs['name']``).
 
-    def __init__(self, class_name: str = "person"):
+    `greet_after_s` is a dwell: the entity must have been tracked as an object for
+    at least this long (since `first_seen_ts`) before we greet it — so a fleeting
+    detection or a one-frame face match doesn't trigger a premature greeting.
+    With the default of 0.0 it fires as soon as a name appears."""
+
+    def __init__(self, class_name: str = "person", greet_after_s: float = 0.0):
         self.class_name = class_name
+        self.greet_after_s = greet_after_s
         self._announced: dict[int, str] = {}  # track_id -> announced name
 
     def update(self, registry, ts: float, frame_area: float = 0.0) -> list[Event]:
@@ -146,12 +154,42 @@ class RecognizeTrigger:
                 continue
             present.add(e.track_id)
             name = e.attrs.get("name")
-            if name and self._announced.get(e.track_id) != name:
+            if not name or (ts - e.first_seen_ts) < self.greet_after_s:
+                continue  # no name yet, or not tracked long enough to greet
+            if self._announced.get(e.track_id) != name:
                 self._announced[e.track_id] = name
                 events.append(Event(kind="recognize", class_name=self.class_name,
                                     track_id=e.track_id, name=name, ts=ts))
         for tid in [t for t in self._announced if t not in present]:
             del self._announced[tid]
+        return events
+
+
+class FarewellTrigger:
+    """Fires `farewell` once when a previously-greeted entity of `class_name`
+    goes gone — i.e. the registry drops the track after its (generous) gone-timer,
+    which is the "disappeared long enough" threshold. Mirrors RecognizeTrigger's
+    `greet_after_s` dwell so we only say goodbye to someone we would have greeted
+    ("greeted first, then goodbye")."""
+
+    def __init__(self, class_name: str = "person", greet_after_s: float = 0.0):
+        self.class_name = class_name
+        self.greet_after_s = greet_after_s
+        self._eligible: dict[int, str] = {}  # track_id -> name of a greeted person
+
+    def update(self, registry, ts: float, frame_area: float = 0.0) -> list[Event]:
+        present: set[int] = set()
+        for e in registry.confirmed():
+            if e.class_name != self.class_name:
+                continue
+            present.add(e.track_id)
+            name = e.attrs.get("name")
+            if name and (ts - e.first_seen_ts) >= self.greet_after_s:
+                self._eligible[e.track_id] = name  # would have been greeted
+        events: list[Event] = []
+        for tid in sorted(self._eligible.keys() - present):
+            events.append(Event(kind="farewell", class_name=self.class_name,
+                                track_id=tid, name=self._eligible.pop(tid), ts=ts))
         return events
 
 

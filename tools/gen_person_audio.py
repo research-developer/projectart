@@ -18,6 +18,7 @@ from pathlib import Path
 
 TEMPLATES = {
     "greet": "Hi {first}!",
+    "farewell": "Bye {first}, see you later!",
     "intersect_look": "Look at {first}'s cute little meow meow.",
     "intersect_benice": "{first}, be nice to the meow meow.",
 }

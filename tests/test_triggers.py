@@ -143,6 +143,47 @@ def test_recognize_fires_once_when_name_set():
     assert trig.update(reg, 0.2) == []  # not announced again
 
 
+def test_recognize_respects_greet_dwell():
+    """With a dwell, a named person isn't greeted until tracked long enough."""
+    from projectart.tracking.triggers import RecognizeTrigger
+    reg = _reg()
+    trig = RecognizeTrigger("person", greet_after_s=1.0)
+    reg.consume([_person()], ts=0.0)  # first_seen_ts = 0.0
+    next(e for e in reg if e.class_name == "person").attrs["name"] = "Samaya"
+    assert trig.update(reg, 0.5) == []          # named but within the 1.0s dwell
+    reg.consume([_person()], ts=1.2)            # still tracked, now past the dwell
+    evs = trig.update(reg, 1.2)
+    assert len(evs) == 1 and evs[0].kind == "recognize" and evs[0].name == "Samaya"
+    assert trig.update(reg, 1.3) == []          # greeted once, no repeat
+
+
+def test_farewell_fires_after_gone():
+    """FarewellTrigger says goodbye once a recognized person is dropped (gone)."""
+    from projectart.tracking.triggers import FarewellTrigger
+    reg = _reg()
+    trig = FarewellTrigger("person", greet_after_s=0.0)
+    reg.consume([_person()], ts=0.0)
+    next(e for e in reg if e.class_name == "person").attrs["name"] = "Samaya"
+    assert trig.update(reg, 0.0) == []          # present -> no farewell
+    reg.consume([], ts=3.0)                      # past GONE_AFTER_S (2.0) -> dropped
+    evs = trig.update(reg, 3.0)
+    assert len(evs) == 1 and evs[0].kind == "farewell" and evs[0].name == "Samaya"
+    reg.consume([], ts=3.1)
+    assert trig.update(reg, 3.1) == []          # does not fire again
+
+
+def test_farewell_only_after_greet_dwell():
+    """Someone who leaves before the greet dwell was never greeted -> no goodbye."""
+    from projectart.tracking.triggers import FarewellTrigger
+    reg = _reg()
+    trig = FarewellTrigger("person", greet_after_s=5.0)  # long dwell
+    reg.consume([_person()], ts=0.0)
+    next(e for e in reg if e.class_name == "person").attrs["name"] = "Samaya"
+    trig.update(reg, 0.0)                        # named but well within the dwell
+    reg.consume([], ts=3.0)                      # gone before the dwell elapsed
+    assert trig.update(reg, 3.0) == []           # never greeted -> never farewelled
+
+
 def test_recognize_refires_after_gone():
     """A named person going GONE is pruned from the trigger's memory, so a fresh
     track for the same person re-fires `recognize` (re-entry should re-announce)."""

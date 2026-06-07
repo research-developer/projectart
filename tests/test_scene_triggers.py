@@ -47,20 +47,41 @@ def test_scene_emits_person_cat_intersect_event_on_bus():
     assert any(e.kind == "intersect" for e in got)
 
 
-def test_scene_face_name_fires_recognize_event_on_bus():
-    """End-to-end: _assign_face_names tags the matching person entity, and the
-    RecognizeTrigger wired into the publisher then fires a `recognize` event."""
+def _appear_and_name(sp, name="Samaya", cx=300, cy=300):
+    """Confirm a person entity and assign it a recognized face name."""
+    face = ((cx - 10, cy - 10, 20, 20), name, 0.5)  # face centre inside the person box
+    for ts in (0.0, 0.1):
+        sp.registry.consume([_det(0, "person", cx=cx, cy=cy, w=200, h=200)], ts=ts)
+        sp.triggers.update(sp.registry, ts, 640 * 360)
     from projectart.inputs.scene import _assign_face_names
+    _assign_face_names(sp.registry, [face])
 
+
+def test_scene_face_name_greets_after_dwell_not_immediately():
+    """End-to-end: _assign_face_names tags the person, but the greet waits for the
+    dwell (no premature greeting) — then RecognizeTrigger fires once."""
     sp = _scene()
     got = []
     sp.bus.on("event.recognize", lambda *, event: got.append(event))
-    # person appears and is confirmed (no name yet -> no recognize)
-    for ts in (0.0, 0.1):
-        sp.registry.consume([_det(0, "person", cx=300, cy=300, w=200, h=200)], ts=ts)
-        sp.triggers.update(sp.registry, ts, 640 * 360)
-    assert not got
-    # a recognized face whose centre (300, 300) lands inside the person box (200..400)
-    _assign_face_names(sp.registry, [((290, 290, 20, 20), "Samaya", 0.5)])
+    _appear_and_name(sp, "Samaya")
     sp.triggers.update(sp.registry, 0.2, 640 * 360)
-    assert any(e.kind == "recognize" and e.name == "Samaya" for e in got)
+    assert not got  # named, but within the greet dwell -> not greeted yet
+    # still tracked, now past the dwell -> greet exactly once
+    sp.registry.consume([_det(0, "person", cx=300, cy=300, w=200, h=200)], ts=2.0)
+    sp.triggers.update(sp.registry, 2.0, 640 * 360)
+    assert [(e.kind, e.name) for e in got] == [("recognize", "Samaya")]
+
+
+def test_scene_says_farewell_after_recognized_person_gone():
+    """A greeted person who disappears past the gone threshold gets a farewell."""
+    sp = _scene()
+    fare = []
+    sp.bus.on("event.farewell", lambda *, event: fare.append(event))
+    _appear_and_name(sp, "Samaya")
+    sp.registry.consume([_det(0, "person", cx=300, cy=300, w=200, h=200)], ts=2.0)
+    sp.triggers.update(sp.registry, 2.0, 640 * 360)  # past dwell -> eligible (greeted)
+    assert not fare
+    # person leaves; advance past gone_after_s (3.0) so the registry drops them
+    sp.registry.consume([], ts=6.0)
+    sp.triggers.update(sp.registry, 6.0, 640 * 360)
+    assert any(e.kind == "farewell" and e.name == "Samaya" for e in fare)

@@ -10,6 +10,8 @@ Situation map:
   cat appears, near/big   -> cat_appear_near     ("Easy there, meow meow, I'm not your food.")
   cat disappears          -> cat_leave           ("Aww, bye bye, meow meow.")
   person & cat intersect  -> intersect_look | intersect_benice  (random)
+  person recognized       -> greet_<name>        ("Hi <name>!")          [after a dwell]
+  recognized person gone  -> farewell_<name>      ("Bye <name>, see you later!")
 """
 from __future__ import annotations
 
@@ -83,7 +85,9 @@ class CatAudioPlayer:
         cat, person = self.cfg.cat_class, self.cfg.person_class
         slug = _slug(ev.name) if getattr(ev, "name", None) else None
         if ev.kind == "recognize" and slug:
-            return [f"greet_{slug}"]
+            return [f"greet_{slug}", "greet"]
+        if ev.kind == "farewell" and slug:
+            return [f"farewell_{slug}", "farewell"]
         if ev.kind == "appear" and ev.class_name == cat:
             return ["cat_appear_near" if ev.size == "near" else "cat_appear_far"]
         if ev.kind == "disappear" and ev.class_name == cat:
