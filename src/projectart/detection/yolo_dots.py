@@ -9,6 +9,8 @@ back to `yolov8n.pt` so M2/M3 development isn't blocked.
 Usage:
     detector = DotDetector(weights_path=Path("models/yolo-dots.pt"))
     detections = detector(frame_bgr)   # list[Detection]
+    # or with persistent tracking:
+    detections = detector.track(frame_bgr)  # list[Detection] with track_id
 """
 from __future__ import annotations
 
@@ -32,6 +34,37 @@ class Detection:
     h: float           # bbox height in pixels
     confidence: float
     class_name: str = ""
+    track_id: int | None = None
+
+
+def _parse_boxes(boxes, class_names: dict[int, str], with_ids: bool) -> list[Detection]:
+    """Pure converter from an ultralytics Boxes-like object to Detections.
+    Accepts anything exposing .xywh/.cls/.conf/.id with .cpu().numpy()."""
+    if boxes is None or len(boxes) == 0:
+        return []
+
+    def arr(t):
+        return t.cpu().numpy() if hasattr(t, "cpu") else np.asarray(t)
+
+    xywh = arr(boxes.xywh)
+    cls = arr(boxes.cls).astype(int)
+    conf = arr(boxes.conf)
+    ids = None
+    if with_ids and getattr(boxes, "id", None) is not None:
+        ids = arr(boxes.id).astype(int)
+    out: list[Detection] = []
+    for i in range(len(xywh)):
+        cx, cy, w, h = (float(v) for v in xywh[i])
+        cid = int(cls[i])
+        out.append(
+            Detection(
+                class_id=cid, cx=cx, cy=cy, w=w, h=h,
+                confidence=float(conf[i]),
+                class_name=class_names.get(cid, ""),
+                track_id=(int(ids[i]) if ids is not None else None),
+            )
+        )
+    return out
 
 
 class DotDetector:
@@ -55,7 +88,7 @@ class DotDetector:
         if self._model is not None:
             return
         try:
-            from ultralytics import YOLO  # noqa: WPS433
+            from ultralytics import YOLO
         except ImportError as e:
             raise RuntimeError(
                 "ultralytics is not installed. `pip install -e '.[yolo]'` "
@@ -88,34 +121,22 @@ class DotDetector:
 
     def __call__(self, frame_bgr: np.ndarray) -> list[Detection]:
         self._ensure_loaded()
-        results = self._model(  # type: ignore[misc]
-            frame_bgr,
-            imgsz=self.imgsz,
-            conf=self.conf_thresh,
-            verbose=False,
+        results = self._model(frame_bgr, imgsz=self.imgsz, conf=self.conf_thresh, verbose=False)
+        if not results:
+            return []
+        return _parse_boxes(results[0].boxes, self._class_names, with_ids=False)
+
+    _TRACKER_YAML = {"bytetrack": "bytetrack.yaml", "botsort": "botsort.yaml"}
+
+    def track(self, frame_bgr: np.ndarray, tracker: str = "bytetrack") -> list[Detection]:
+        """Run detection + persistent tracking. Each Detection carries a stable
+        `track_id` across calls (ByteTrack/BoT-SORT)."""
+        self._ensure_loaded()
+        yaml = self._TRACKER_YAML.get(tracker, "bytetrack.yaml")
+        results = self._model.track(
+            frame_bgr, persist=True, tracker=yaml,
+            imgsz=self.imgsz, conf=self.conf_thresh, verbose=False,
         )
         if not results:
             return []
-        r = results[0]
-        if r.boxes is None or len(r.boxes) == 0:
-            return []
-        boxes = r.boxes
-        xywh = boxes.xywh.cpu().numpy() if hasattr(boxes.xywh, "cpu") else np.asarray(boxes.xywh)
-        cls = boxes.cls.cpu().numpy().astype(int) if hasattr(boxes.cls, "cpu") else np.asarray(boxes.cls).astype(int)
-        conf = boxes.conf.cpu().numpy() if hasattr(boxes.conf, "cpu") else np.asarray(boxes.conf)
-        out: list[Detection] = []
-        for i in range(len(xywh)):
-            cx, cy, w, h = (float(v) for v in xywh[i])
-            class_id = int(cls[i])
-            out.append(
-                Detection(
-                    class_id=class_id,
-                    cx=cx,
-                    cy=cy,
-                    w=w,
-                    h=h,
-                    confidence=float(conf[i]),
-                    class_name=self._class_names.get(class_id, ""),
-                )
-            )
-        return out
+        return _parse_boxes(results[0].boxes, self._class_names, with_ids=True)

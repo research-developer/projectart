@@ -1,24 +1,21 @@
 """TrackedRegistry — the smart container.
 
-Per frame:
-1. Receive a fresh list of YOLO detections.
-2. For each existing entity, find the best-matching detection by
-   (class_id, IoU). Match if IoU >= IOU_THRESHOLD.
-3. Matched entities → call `on_update`, transition to PRESENT.
-4. Unmatched detections → instantiate the right `TrackedEntity` subclass
-   (via `class_filter`) → fire `on_enter`.
-5. Unmatched entities → if missed > LOST_AFTER_S, transition to LEAVING;
-   if missed > GONE_AFTER_S, fire `on_leave` and drop.
+Two association modes, chosen per frame:
+  * If detections carry `track_id` (from a persistent tracker), associate by id
+    (exact). This is the robust path — survives big bbox jumps / crossings.
+  * Otherwise fall back to greedy IoU per class (legacy default).
 
-The association is greedy IoU per class. For dense scenes (many
-overlapping bboxes of the same class) we'd swap in a Hungarian matcher
-or a real tracker (ByteTrack / SORT). The interface above doesn't change.
+Hysteresis:
+  * `confirm_after_hits` — on_enter fires only once an entity has been seen this
+    many frames (suppresses 1-frame false positives). Default 1 = immediate.
+  * `lost_after_s` / `gone_after_s` — coast through brief dropouts before LEAVING
+    / GONE. Default None = use the entity class attrs (0.5 / 2.0).
 """
 from __future__ import annotations
 
 import logging
 import time
-from typing import Iterable
+from collections.abc import Iterable
 
 from ..detection.yolo_dots import Detection
 from .entity import BBox, EntityState, TrackedEntity
@@ -34,79 +31,121 @@ class TrackedRegistry:
         entity_types: Iterable[type[TrackedEntity]],
         iou_threshold: float = DEFAULT_IOU_THRESHOLD,
         fallback_type: type[TrackedEntity] | None = None,
+        confirm_after_hits: int = 1,
+        lost_after_s: float | None = None,
+        gone_after_s: float | None = None,
+        min_confidence: float = 0.0,
     ):
-        # Map YOLO class_name → TrackedEntity subclass.
         self._by_class: dict[str, type[TrackedEntity]] = {}
         for ty in entity_types:
             for name in ty.class_filter():
                 if name in self._by_class:
                     log.warning(
                         "duplicate entity_type for class %r: %s shadowed by %s",
-                        name,
-                        self._by_class[name].__name__,
-                        ty.__name__,
+                        name, self._by_class[name].__name__, ty.__name__,
                     )
                 self._by_class[name] = ty
         self.entities: dict[int, TrackedEntity] = {}
         self.iou_threshold = iou_threshold
         self.fallback_type = fallback_type
+        self.confirm_after_hits = max(1, int(confirm_after_hits))
+        self.lost_after_s = lost_after_s
+        self.gone_after_s = gone_after_s
+        self.min_confidence = float(min_confidence)
         self._next_id = 1
+        self._by_track: dict[int, int] = {}  # tracker id -> internal track_id
 
     def consume(self, detections: list[Detection], ts: float | None = None) -> None:
-        """One pass per video frame. Drives every transition in the
-        entity lifecycle."""
         now = time.monotonic() if ts is None else float(ts)
-        unmatched_dets = list(detections)
+        dets = [d for d in detections if d.confidence >= self.min_confidence]
+        use_track_ids = any(d.track_id is not None for d in dets)
+        if use_track_ids:
+            self._consume_by_track_id(dets, now)
+        else:
+            self._consume_by_iou(dets, now)
+        self._age_and_confirm(now)
+        self._drop_gone()
 
-        # 1. Associate existing entities to detections by class + best IoU
+    # ---- association: tracker ids ----
+
+    def _consume_by_track_id(self, dets: list[Detection], now: float) -> None:
+        skipped = sum(1 for d in dets if d.track_id is None)
+        if skipped:
+            log.debug("skipped %d detection(s) lacking track_id in track-id mode", skipped)
+        for det in dets:
+            if det.track_id is None:
+                continue
+            internal = self._by_track.get(det.track_id)
+            ent = self.entities.get(internal) if internal is not None else None
+            if ent is not None:
+                if ent.confirmed and ent.state in (EntityState.ENTERING, EntityState.LEAVING):
+                    ent.state = EntityState.PRESENT
+                ent.on_update(det, now)
+            else:
+                self._spawn(det, now)
+
+    # ---- association: greedy IoU (legacy) ----
+
+    def _consume_by_iou(self, dets: list[Detection], now: float) -> None:
+        unmatched = list(dets)
         for entity in list(self.entities.values()):
-            best = -1
-            best_iou = self.iou_threshold
-            for i, det in enumerate(unmatched_dets):
+            best, best_iou = -1, self.iou_threshold
+            for i, det in enumerate(unmatched):
                 if det.class_id != entity.class_id:
                     continue
-                bbox = BBox.from_detection(det)
-                iou = entity.last_bbox.iou(bbox)
+                iou = entity.last_bbox.iou(BBox.from_detection(det))
                 if iou >= best_iou:
-                    best = i
-                    best_iou = iou
+                    best, best_iou = i, iou
             if best >= 0:
-                det = unmatched_dets.pop(best)
-                if entity.state in (EntityState.ENTERING, EntityState.LEAVING):
+                det = unmatched.pop(best)
+                if entity.confirmed and entity.state in (EntityState.ENTERING, EntityState.LEAVING):
                     entity.state = EntityState.PRESENT
                 entity.on_update(det, now)
-            else:
-                # No match this frame — promote to LEAVING / GONE based on age
-                missing_for = now - entity.last_seen_ts
-                if (
-                    entity.state == EntityState.PRESENT
-                    and missing_for >= entity.LOST_AFTER_S
-                ):
-                    entity.state = EntityState.LEAVING
-                if missing_for >= entity.GONE_AFTER_S:
-                    entity.state = EntityState.GONE
+        for det in unmatched:
+            self._spawn(det, now)
 
-        # 2. Spawn entities for unmatched detections
-        for det in unmatched_dets:
-            ent_type = self._resolve_type(det)
-            if ent_type is None:
-                continue
-            ent = ent_type(track_id=self._next_id, det=det, ts=now)
-            self._next_id += 1
-            self.entities[ent.track_id] = ent
-            ent.on_enter()
-            ent.state = EntityState.PRESENT
+    # ---- spawn / age / confirm / drop ----
 
-        # 3. Drop GONE entities (after firing on_leave)
+    def _spawn(self, det: Detection, now: float) -> None:
+        ent_type = self._resolve_type(det)
+        if ent_type is None:
+            return
+        ent = ent_type(track_id=self._next_id, det=det, ts=now)
+        self._next_id += 1
+        self.entities[ent.track_id] = ent
+        if det.track_id is not None:
+            self._by_track[det.track_id] = ent.track_id
+
+    def _age_and_confirm(self, now: float) -> None:
+        for ent in self.entities.values():
+            lost = self.lost_after_s if self.lost_after_s is not None else ent.LOST_AFTER_S
+            gone = self.gone_after_s if self.gone_after_s is not None else ent.GONE_AFTER_S
+            missing = now - ent.last_seen_ts
+            if not ent.confirmed and ent.hits >= self.confirm_after_hits:
+                ent.confirmed = True
+                ent.state = EntityState.PRESENT
+                ent.on_enter()
+            if ent.state == EntityState.PRESENT and missing >= lost:
+                ent.state = EntityState.LEAVING
+            if missing >= gone:
+                ent.state = EntityState.GONE
+
+    def _drop_gone(self) -> None:
         gone = [tid for tid, e in self.entities.items() if e.state == EntityState.GONE]
         for tid in gone:
             ent = self.entities.pop(tid)
-            ent.on_leave()
+            if ent.track_key is not None:
+                self._by_track.pop(ent.track_key, None)
+            if ent.confirmed:
+                ent.on_leave()
 
-    # ---- introspection helpers ----
+    # ---- introspection ----
 
     def of_class(self, class_name: str) -> list[TrackedEntity]:
         return [e for e in self.entities.values() if e.class_name == class_name]
+
+    def confirmed(self) -> list[TrackedEntity]:
+        return [e for e in self.entities.values() if e.confirmed]
 
     def get(self, track_id: int) -> TrackedEntity | None:
         return self.entities.get(track_id)
@@ -117,12 +156,8 @@ class TrackedRegistry:
     def __iter__(self):
         return iter(self.entities.values())
 
-    # ---- internals ----
-
     def _resolve_type(self, det: Detection) -> type[TrackedEntity] | None:
         ty = self._by_class.get(det.class_name or "")
         if ty is not None:
             return ty
-        if self.fallback_type is not None:
-            return self.fallback_type
-        return None
+        return self.fallback_type

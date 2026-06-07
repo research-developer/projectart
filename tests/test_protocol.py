@@ -9,6 +9,8 @@ from projectart.server.protocol import (
     Hello,
     HudAnchorEvent,
     PointerEvent,
+    SceneFrame,
+    SceneObject,
     to_dict,
 )
 
@@ -44,3 +46,19 @@ def test_command_event():
     c = CommandEvent(command="undo")
     d = to_dict(c)
     assert d == {"type": "command", "command": "undo"}
+
+
+def test_protocol_version_is_2():
+    assert PROTOCOL_VERSION == 2
+
+
+def test_scene_frame_round_trips():
+    f = SceneFrame(ts_ms=123, objects=[
+        SceneObject(id=1, kind="box", shape="box", x=0.5, y=0.5, vx=0.1, vy=0.0,
+                    r=0.06, color="#39f", state="", alpha=1.0, angle=0.0, track_id=7),
+    ])
+    d = to_dict(f)
+    assert d["type"] == "scene_frame"
+    assert d["objects"][0]["kind"] == "box"
+    assert d["objects"][0]["track_id"] == 7
+    assert d["objects"][0]["x"] == 0.5

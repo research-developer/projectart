@@ -25,18 +25,20 @@ class BehaviorBus:
     def __init__(self) -> None:
         self._subs: dict[str, list[Handler]] = defaultdict(list)
 
-    def on(self, event: str, handler: Handler) -> None:
-        self._subs[event].append(handler)
+    def on(self, topic: str, handler: Handler) -> None:
+        self._subs[topic].append(handler)
 
-    def off(self, event: str, handler: Handler) -> None:
+    def off(self, topic: str, handler: Handler) -> None:
         try:
-            self._subs[event].remove(handler)
+            self._subs[topic].remove(handler)
         except ValueError:
             pass
 
-    def emit(self, event: str, **kwargs) -> None:
-        for h in list(self._subs.get(event, ())):
+    def emit(self, topic: str, **kwargs) -> None:
+        # `topic` (not `event`) so callers can forward an `event=` kwarg to
+        # handlers without colliding with this parameter — see scene.py.
+        for h in list(self._subs.get(topic, ())):
             try:
                 h(**kwargs)
             except Exception:
-                log.exception("handler for %r raised", event)
+                log.exception("handler for %r raised", topic)

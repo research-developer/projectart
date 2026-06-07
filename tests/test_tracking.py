@@ -163,3 +163,14 @@ def test_bus_off_removes_handler():
     bus.off("x", h)
     bus.emit("x", a=1)
     assert seen == []
+
+
+def test_bus_emit_forwards_event_kwarg():
+    """Regression: scene.py calls `bus.emit("entity.enter", event=ev)`. The
+    topic parameter must not be named `event`, or that kwarg collides and
+    raises TypeError. Surfaced the first time the live scene loop ran."""
+    bus = BehaviorBus()
+    got = []
+    bus.on("entity.enter", lambda **kw: got.append(kw))
+    bus.emit("entity.enter", event="ENTITY_OBJ")
+    assert got == [{"event": "ENTITY_OBJ"}]
