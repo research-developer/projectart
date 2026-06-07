@@ -82,6 +82,16 @@ class App:
                 config_path=getattr(self.args, "reactive_config", None),
             )
             await source.run()
+        elif self.args.input == "floor":
+            from .inputs.floor_factory import build_floor_source
+
+            source = build_floor_source(
+                canvas_size=self.canvas_size,
+                server=self._server,
+                game=self.args.game,
+                camera_index=self.args.camera_index,
+            )
+            await source.run()
         else:
             log.warning(
                 "input=%s not yet implemented; idling.", self.args.input

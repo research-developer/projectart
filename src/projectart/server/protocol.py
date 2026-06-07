@@ -1,14 +1,14 @@
 """Wire protocol between the Python backend and the browser renderer.
 
 Messages are JSON. Every message has a `type` field. Future schema changes go
-through `version` (current = 2).
+through `version` (current = 3).
 """
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from typing import Literal
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 
 
 @dataclass
@@ -99,6 +99,17 @@ class SceneFrame:
     ts_ms: int
     objects: list[SceneObject] = field(default_factory=list)
     type: Literal["scene_frame"] = "scene_frame"
+
+
+@dataclass
+class GameState:
+    """Scoreboard / round state for a floor game. Sent alongside SceneFrame."""
+
+    score: int = 0
+    round_ms_left: int = 0
+    phase: str = "playing"  # idle | playing | over
+    ts_ms: int = 0
+    type: Literal["game_state"] = "game_state"
 
 
 def to_dict(event) -> dict:

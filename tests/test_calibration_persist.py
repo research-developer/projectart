@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 from pydantic import ValidationError
 
@@ -10,13 +11,17 @@ from projectart.calibration.persist import (
     CALIB_VERSION,
     CalibrationDoc,
     CameraIntrinsics,
+    StageSchema,
     StereoExtrinsics,
     UvBasisSchema,
     WallPlaneSchema,
+    doc_with_stage,
     empty_for_canvas,
     load_calibration,
     save_calibration,
+    stage_calibration_from_doc,
 )
+from projectart.geometry.stage import StageCalibration
 
 
 def test_empty_doc_round_trip(tmp_path: Path):
@@ -99,3 +104,26 @@ def test_atomic_write_does_not_leave_tmp(tmp_path: Path):
     save_calibration(doc, path=target)
     siblings = list(tmp_path.iterdir())
     assert all(p.suffix != ".tmp" for p in siblings), siblings
+
+
+def test_stage_round_trips_through_doc():
+    cal = StageCalibration.identity(640, 360, 1920, 1080)
+    cal.height_offset = (0.01, -0.02)
+    doc = doc_with_stage(CalibrationDoc(), cal)
+    back = stage_calibration_from_doc(doc)
+    assert back is not None
+    assert np.allclose(back.cam_to_stage, cal.cam_to_stage)
+    assert np.allclose(back.stage_to_projector, cal.stage_to_projector)
+    assert back.height_offset == (0.01, -0.02)
+
+
+def test_no_stage_section_returns_none():
+    assert stage_calibration_from_doc(CalibrationDoc()) is None
+
+
+def test_stage_schema_rejects_non_3x3():
+    with pytest.raises(ValidationError):
+        StageSchema(
+            cam_to_stage=[[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]],
+            stage_to_projector=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        )

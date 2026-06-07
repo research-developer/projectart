@@ -12,7 +12,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser("projectart")
     p.add_argument(
         "--input",
-        choices=["mouse", "gloves", "scene", "reactive", "wand", "androidtv"],
+        choices=["mouse", "gloves", "scene", "reactive", "floor", "wand", "androidtv"],
         default="mouse",
         help="input source (default: mouse — useful for dev without cameras)",
     )
@@ -28,6 +28,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="path to YOLO weights (.pt/.onnx). If unset, falls back to yolov8n.pt",
     )
     p.add_argument("--reactive-config", default=None, help="path to a reactive config JSON")
+    p.add_argument("--game", default="whack", help="floor game to run (default: whack)")
+    p.add_argument(
+        "--camera-index", type=int, default=0,
+        help="local camera index for --input floor",
+    )
     p.add_argument("--recalibrate", action="store_true")
     p.add_argument("--log", default="INFO")
     return p.parse_args(argv)

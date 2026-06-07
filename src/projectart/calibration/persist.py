@@ -14,10 +14,13 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from ..geometry.stage import StageCalibration
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 log = logging.getLogger(__name__)
 
@@ -75,6 +78,21 @@ class CanvasSize(BaseModel):
     h: int = 1080
 
 
+class StageSchema(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cam_to_stage: list[list[float]] = Field(min_length=3, max_length=3)
+    stage_to_projector: list[list[float]] = Field(min_length=3, max_length=3)
+    height_offset: list[float] = Field(
+        default_factory=lambda: [0.0, 0.0], min_length=2, max_length=2
+    )
+
+    @field_validator("cam_to_stage", "stage_to_projector")
+    @classmethod
+    def _check_3x3(cls, v):
+        return _matrix_validator(3, 3)(v)
+
+
 class CalibrationDoc(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -88,6 +106,7 @@ class CalibrationDoc(BaseModel):
     stereo: Optional[StereoExtrinsics] = None
     wall_plane: Optional[WallPlaneSchema] = None
     uv_basis: Optional[UvBasisSchema] = None
+    stage: StageSchema | None = None
 
     # Homographies are 3x3 lists of lists. None when not yet calibrated.
     homography_uv_to_canvas: Optional[list[list[float]]] = None
@@ -130,3 +149,26 @@ def load_calibration(path: Path | None = None) -> CalibrationDoc | None:
 def empty_for_canvas(canvas_w: int, canvas_h: int) -> CalibrationDoc:
     """Convenience constructor for a fresh CalibrationDoc with just the canvas size set."""
     return CalibrationDoc(canvas=CanvasSize(w=canvas_w, h=canvas_h))
+
+
+def stage_calibration_from_doc(doc: CalibrationDoc) -> StageCalibration | None:
+    """Build a StageCalibration from a doc's stage section, or None if absent."""
+    from ..geometry.stage import StageCalibration
+
+    if doc.stage is None:
+        return None
+    return StageCalibration(
+        cam_to_stage=np.asarray(doc.stage.cam_to_stage, dtype=np.float64),
+        stage_to_projector=np.asarray(doc.stage.stage_to_projector, dtype=np.float64),
+        height_offset=(float(doc.stage.height_offset[0]), float(doc.stage.height_offset[1])),
+    )
+
+
+def doc_with_stage(doc: CalibrationDoc, cal: StageCalibration) -> CalibrationDoc:
+    """Return a copy of `doc` with its stage section set from a StageCalibration."""
+    stage = StageSchema(
+        cam_to_stage=[list(map(float, row)) for row in cal.cam_to_stage],
+        stage_to_projector=[list(map(float, row)) for row in cal.stage_to_projector],
+        height_offset=[float(cal.height_offset[0]), float(cal.height_offset[1])],
+    )
+    return doc.model_copy(update={"stage": stage})

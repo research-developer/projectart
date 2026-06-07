@@ -6,6 +6,7 @@ import json
 from projectart.server.protocol import (
     PROTOCOL_VERSION,
     CommandEvent,
+    GameState,
     Hello,
     HudAnchorEvent,
     PointerEvent,
@@ -48,8 +49,16 @@ def test_command_event():
     assert d == {"type": "command", "command": "undo"}
 
 
-def test_protocol_version_is_2():
-    assert PROTOCOL_VERSION == 2
+def test_protocol_version_is_3():
+    assert PROTOCOL_VERSION == 3
+
+
+def test_game_state_round_trips():
+    d = to_dict(GameState(score=7, round_ms_left=42000, phase="playing", ts_ms=11))
+    assert d["type"] == "game_state"
+    assert d["score"] == 7
+    assert d["round_ms_left"] == 42000
+    assert d["phase"] == "playing"
 
 
 def test_scene_frame_round_trips():
