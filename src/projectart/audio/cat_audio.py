@@ -12,6 +12,9 @@ Situation map:
   person & cat intersect  -> intersect_look | intersect_benice  (random)
   person recognized       -> greet_<name>        ("Hi <name>!")          [after a dwell]
   recognized person gone  -> farewell_<name>      ("Bye <name>, see you later!")
+  freeze starts           -> freeze_start        ("Freeze! Everybody hold still!")
+  freeze result, caught   -> freeze_caught_<name> | freeze_caught  ("{name}, you moved!")
+  freeze result, nobody   -> freeze_clear        ("Nobody moved! You all win!")
 """
 from __future__ import annotations
 
@@ -95,6 +98,12 @@ class CatAudioPlayer:
         if ev.kind == "intersect" and {ev.class_name, ev.other_class} == {cat, person}:
             base = self._rng.choice(["intersect_look", "intersect_benice"])
             return [f"{base}_{slug}", base] if slug else [base]
+        if ev.kind == "freeze":
+            return ["freeze_start"]
+        if ev.kind == "freeze_result":
+            if slug:
+                return [f"freeze_caught_{slug}", "freeze_caught"]
+            return ["freeze_clear"]
         return []
 
     def clip_for(self, situation: str) -> Path | None:

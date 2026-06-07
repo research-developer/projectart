@@ -37,6 +37,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="output device NAME (substring) for cat audio; default = system default")
     p.add_argument("--list-audio-devices", action="store_true",
                    help="list output audio devices and exit")
+    p.add_argument("--freeze", action="store_true",
+                   help="enable the Freeze-Tag face game in scene mode")
     p.add_argument("--recalibrate", action="store_true")
     p.add_argument("--log", default="INFO")
     return p.parse_args(argv)

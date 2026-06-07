@@ -29,6 +29,7 @@ from pathlib import Path
 from ..audio.cat_audio import CatAudioConfig, CatAudioPlayer
 from ..capture.yi_rtsp import YiCapture, yi_rtsp_url
 from ..detection.yolo_dots import DotDetector
+from ..games.freeze_tag import FreezeConfig, FreezeGame
 from ..server.protocol import EntityEvent
 from ..server.ws import Server
 from ..tracking import TrackedEntity, TrackedRegistry
@@ -103,6 +104,8 @@ class ScenePublisher:
         face_gallery_path: str | None = None,
         recognize_every_s: float = 0.5,
         greet_after_s: float = 1.5,
+        enable_freeze_game: bool = False,
+        freeze_players: tuple[str, ...] | None = None,
     ):
         self.canvas_size = canvas_size
         self.server = server
@@ -128,16 +131,18 @@ class ScenePublisher:
         # been tracked as a stable object for `greet_after_s` (no premature
         # greeting), and bid farewell once they've been gone past the registry's
         # `gone_after_s` threshold ("greeted first, then goodbye").
-        self.triggers = TriggerEngine(
-            [
-                AppearTrigger("cat", near_area_frac=near_area_frac),
-                DisappearTrigger("cat"),
-                IntersectTrigger("person", "cat", min_overlap=intersect_overlap),
-                RecognizeTrigger("person", greet_after_s=greet_after_s),
-                FarewellTrigger("person", greet_after_s=greet_after_s),
-            ],
-            bus=self.bus,
-        )
+        trigger_list = [
+            AppearTrigger("cat", near_area_frac=near_area_frac),
+            DisappearTrigger("cat"),
+            IntersectTrigger("person", "cat", min_overlap=intersect_overlap),
+            RecognizeTrigger("person", greet_after_s=greet_after_s),
+            FarewellTrigger("person", greet_after_s=greet_after_s),
+        ]
+        if enable_freeze_game:
+            trigger_list.append(
+                FreezeGame(FreezeConfig(players=tuple(freeze_players or ())))
+            )
+        self.triggers = TriggerEngine(trigger_list, bus=self.bus)
         self.cat_audio: CatAudioPlayer | None = None
         if enable_cat_audio:
             self.cat_audio = CatAudioPlayer(CatAudioConfig(device=audio_device))
@@ -299,6 +304,7 @@ def build_scene_source(
     enable_cat_audio: bool = True,
     audio_device: str | None = None,
     enable_face_recognition: bool = True,
+    enable_freeze_game: bool = False,
 ) -> ScenePublisher:
     """CLI bridge — same yi-hack-v5 URL defaults as the gloves source."""
     url_a = webcam_a or yi_rtsp_url(host="10.0.0.33", low_res=True)
@@ -313,4 +319,5 @@ def build_scene_source(
         enable_cat_audio=enable_cat_audio,
         audio_device=audio_device,
         enable_face_recognition=enable_face_recognition,
+        enable_freeze_game=enable_freeze_game,
     )

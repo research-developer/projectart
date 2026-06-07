@@ -70,6 +70,7 @@ class App:
                 webcam_b=self.args.webcam_b,
                 yolo_weights=self.args.yolo_weights,
                 audio_device=self.args.audio_device,
+                enable_freeze_game=getattr(self.args, "freeze", False),
             )
             await source.run()
         elif self.args.input == "reactive":
