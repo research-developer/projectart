@@ -71,6 +71,7 @@ class App:
                 yolo_weights=self.args.yolo_weights,
                 audio_device=self.args.audio_device,
                 enable_freeze_game=getattr(self.args, "freeze", False),
+                camera_index=self.args.camera_index,
             )
             await source.run()
         elif self.args.input == "reactive":
@@ -91,7 +92,7 @@ class App:
                 canvas_size=self.canvas_size,
                 server=self._server,
                 game=self.args.game,
-                camera_index=self.args.camera_index,
+                camera_index=self.args.camera_index if self.args.camera_index is not None else 0,
             )
             await source.run()
         else:

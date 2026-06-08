@@ -85,3 +85,37 @@ def test_scene_says_farewell_after_recognized_person_gone():
     sp.registry.consume([], ts=6.0)
     sp.triggers.update(sp.registry, 6.0, 640 * 360)
     assert any(e.kind == "farewell" and e.name == "Samaya" for e in fare)
+
+
+# ---- local-camera capture (Mac / Continuity Camera) ----
+
+def _server():
+    return Server(ws_host="127.0.0.1", ws_port=0, http_port=0,
+                  static_dir=Path("."), canvas_size=(1920, 1080))
+
+
+def test_scene_uses_local_camera_when_index_given():
+    from projectart.capture.local_cam import LocalCamera
+    sp = ScenePublisher(canvas_size=(1920, 1080), server=_server(), camera_index=2,
+                        enable_cat_audio=False, enable_face_recognition=False)
+    assert isinstance(sp.capture_a, LocalCamera)
+    assert sp.capture_a.index == 2
+    assert sp.capture_b is None  # single local camera, no cam-b
+
+
+def test_scene_defaults_to_rtsp_capture():
+    from projectart.capture.yi_rtsp import YiCapture
+    sp = _scene()  # camera_url_a="x", no camera_index -> RTSP
+    assert isinstance(sp.capture_a, YiCapture)
+
+
+def test_build_scene_source_routes_to_local_camera():
+    from projectart.capture.local_cam import LocalCamera
+    from projectart.inputs.scene import build_scene_source
+    sp = build_scene_source(
+        canvas_size=(1920, 1080), server=_server(), webcam_a=None, webcam_b=None,
+        yolo_weights=None, enable_cat_audio=False, enable_face_recognition=False,
+        camera_index=3,
+    )
+    assert isinstance(sp.capture_a, LocalCamera) and sp.capture_a.index == 3
+    assert sp.capture_b is None

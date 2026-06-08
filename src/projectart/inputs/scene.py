@@ -87,8 +87,9 @@ class ScenePublisher:
         self,
         canvas_size: tuple[int, int],
         server: Server,
-        camera_url_a: str,
+        camera_url_a: str | None = None,
         camera_url_b: str | None = None,
+        camera_index: int | None = None,
         yolo_weights_path: str | None = None,
         target_hz: int = 15,
         entity_types: list[type[TrackedEntity]] | None = None,
@@ -112,10 +113,18 @@ class ScenePublisher:
         self.target_hz = target_hz
         self._period = 1.0 / max(1, target_hz)
 
-        self.capture_a = YiCapture(url=camera_url_a, name="cam-a")
-        self.capture_b: YiCapture | None = (
-            YiCapture(url=camera_url_b, name="cam-b") if camera_url_b else None
-        )
+        # Capture source: a local/Continuity camera by index (face game without the
+        # Yi cams), else the Yi RTSP stream(s). LocalCamera is a YiCapture-compatible
+        # drop-in (same start/stop/latest -> Frame); cv2 stays inside capture/.
+        if camera_index is not None:
+            from ..capture.local_cam import LocalCamera
+            self.capture_a = LocalCamera(index=camera_index, name="cam-a")
+            self.capture_b = None  # single local camera; no cam-b
+        else:
+            self.capture_a = YiCapture(url=camera_url_a, name="cam-a")
+            self.capture_b = (
+                YiCapture(url=camera_url_b, name="cam-b") if camera_url_b else None
+            )
         self.detector = DotDetector(weights_path=yolo_weights_path)
 
         self.bus = bus if bus is not None else BehaviorBus()
@@ -175,11 +184,19 @@ class ScenePublisher:
 
     # ---- public lifecycle ----
 
+    @staticmethod
+    def _cam_desc(cap) -> str:
+        """A source label that works for both YiCapture (.url) and LocalCamera (.index)."""
+        if cap is None:
+            return "(none)"
+        url = getattr(cap, "url", None)
+        return url if url else f"local:{getattr(cap, 'index', '?')}"
+
     async def run(self) -> None:
         log.info(
             "scene publisher starting (cam-a=%s, cam-b=%s, target_hz=%d)",
-            self.capture_a.url,
-            self.capture_b.url if self.capture_b else "(none)",
+            self._cam_desc(self.capture_a),
+            self._cam_desc(self.capture_b),
             self.target_hz,
         )
         self.capture_a.start()
@@ -305,15 +322,19 @@ def build_scene_source(
     audio_device: str | None = None,
     enable_face_recognition: bool = True,
     enable_freeze_game: bool = False,
+    camera_index: int | None = None,
 ) -> ScenePublisher:
-    """CLI bridge — same yi-hack-v5 URL defaults as the gloves source."""
-    url_a = webcam_a or yi_rtsp_url(host="10.0.0.33", low_res=True)
-    url_b = webcam_b or yi_rtsp_url(host="10.0.0.34", low_res=True)
+    """CLI bridge. With `camera_index` set, capture from a local/Continuity camera
+    (face game without the Yi cams); otherwise the yi-hack-v5 RTSP streams."""
+    local = camera_index is not None
+    url_a = None if local else (webcam_a or yi_rtsp_url(host="10.0.0.33", low_res=True))
+    url_b = None if local else (webcam_b or yi_rtsp_url(host="10.0.0.34", low_res=True))
     return ScenePublisher(
         canvas_size=canvas_size,
         server=server,
         camera_url_a=url_a,
         camera_url_b=url_b,
+        camera_index=camera_index,
         yolo_weights_path=yolo_weights,
         target_hz=target_hz,
         enable_cat_audio=enable_cat_audio,

@@ -30,8 +30,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--reactive-config", default=None, help="path to a reactive config JSON")
     p.add_argument("--game", default="whack", help="floor game to run (default: whack)")
     p.add_argument(
-        "--camera-index", type=int, default=0,
-        help="local camera index for --input floor",
+        "--camera-index", type=int, default=None,
+        help="capture from a local/Continuity camera by index (scene + floor). "
+             "scene uses RTSP when unset; floor defaults to 0.",
     )
     p.add_argument("--audio-device", default=None,
                    help="output device NAME (substring) for cat audio; default = system default")
