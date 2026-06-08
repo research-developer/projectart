@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from ..tracking.triggers import Event
+from .state_machine import StateMachine
 
 log = logging.getLogger(__name__)
 
@@ -68,20 +69,49 @@ class FreezeConfig:
     class_name: str = "person"
     """YOLO class name to watch."""
 
+    def __post_init__(self) -> None:
+        if self.min_players < 1:
+            raise ValueError(f"min_players must be >= 1, got {self.min_players!r}")
+        if self.settle_s < 0:
+            raise ValueError(f"settle_s must be >= 0, got {self.settle_s!r}")
+        if self.freeze_window_s <= 0:
+            raise ValueError(f"freeze_window_s must be > 0, got {self.freeze_window_s!r}")
+        if self.round_cooldown_s < 0:
+            raise ValueError(f"round_cooldown_s must be >= 0, got {self.round_cooldown_s!r}")
+        if self.move_tolerance < 0:
+            raise ValueError(f"move_tolerance must be >= 0, got {self.move_tolerance!r}")
+        if not isinstance(self.players, tuple):
+            raise ValueError(
+                f"players must be a tuple of strings, got {type(self.players).__name__!r}"
+            )
+        for i, p in enumerate(self.players):
+            if not isinstance(p, str) or not p:
+                raise ValueError(
+                    f"players[{i}] must be a non-empty string, got {p!r}"
+                )
+
 
 # ---- game -------------------------------------------------------------------
 
 
-class FreezeGame:
+class FreezeGame(StateMachine):
     """Conforms to the trigger protocol: ``update(registry, ts, frame_area=0.0) -> list[Event]``.
 
     Drop it into the scene's :class:`~projectart.tracking.triggers.TriggerEngine` and it
     drives ``freeze`` / ``freeze_result`` Events on the bus.
     """
 
-    def __init__(self, config: FreezeConfig | None = None) -> None:
+    _STATES = _State
+    _INITIAL = _State.IDLE
+    _TRANSITIONS = {
+        _State.IDLE: {_State.FROZEN},
+        _State.FROZEN: {_State.COOLDOWN},
+        _State.COOLDOWN: {_State.IDLE},
+    }
+
+    def __init__(self, config: FreezeConfig | None = None, *, strict: bool = False) -> None:
+        super().__init__(strict=strict)
         self.cfg: FreezeConfig = config or FreezeConfig()
-        self._state: _State = _State.IDLE
         # IDLE bookkeeping
         self._eligible_since: float | None = None
         # FROZEN bookkeeping
@@ -98,9 +128,9 @@ class FreezeGame:
         """Called once per frame by TriggerEngine.  Returns at most one Event."""
         present = self._build_present(registry)
 
-        if self._state is _State.IDLE:
+        if self.state is _State.IDLE:
             return self._tick_idle(present, ts)
-        if self._state is _State.FROZEN:
+        if self.state is _State.FROZEN:
             return self._tick_frozen(present, ts)
         # COOLDOWN
         return self._tick_cooldown(ts)
@@ -127,7 +157,7 @@ class FreezeGame:
             self._positions = {name: [] for name in roster}
             self._diagonals = {name: [] for name in roster}
             self._freeze_start = ts
-            self._state = _State.FROZEN
+            self._to(_State.FROZEN, ts=ts)
             log.info("FreezeGame: FROZEN — roster=%s", roster)
             return [Event(kind="freeze", class_name=cfg.class_name, track_id=0, ts=ts)]
         return []
@@ -149,7 +179,7 @@ class FreezeGame:
 
         # Window closed — evaluate.
         caught = self._evaluate(present)
-        self._state = _State.COOLDOWN
+        self._to(_State.COOLDOWN, ts=ts)
         self._cooldown_until = ts + cfg.round_cooldown_s
         self._roster = ()
         self._positions = {}
@@ -167,7 +197,7 @@ class FreezeGame:
 
     def _tick_cooldown(self, ts: float) -> list[Event]:
         if ts >= self._cooldown_until:
-            self._state = _State.IDLE
+            self._to(_State.IDLE, ts=ts)
             self._eligible_since = None
             log.debug("FreezeGame: back to IDLE")
         return []
