@@ -24,7 +24,8 @@ models/*.onnx
 models/*.engine
 models/*.gguf
 !models/.gitkeep
-yolov8n.pt          # ultralytics fallback weights, auto-downloaded to cwd on first use
+# ultralytics fallback weights, auto-downloaded to cwd on first use
+yolov8n.pt
 saves/
 *.png
 !docs/**/*.png
